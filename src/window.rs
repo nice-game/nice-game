@@ -154,7 +154,8 @@ impl Window {
 			Err(err) => panic!("{:?}", err)
 		};
 
-		let mut future = if let Some(future) = self.previous_frame_end.take() {
+		let mut future = if let Some(mut future) = self.previous_frame_end.take() {
+			future.cleanup_finished();
 			Box::new(future.join(acquire_future)) as Box<GpuFuture>
 		} else {
 			Box::new(acquire_future)
