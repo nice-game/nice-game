@@ -63,27 +63,21 @@ impl Drawable for MeshBatch {
 
 		let mut command_buffer = AutoCommandBufferBuilder::primary_one_time_submit(self.shared.device.clone(), queue_family)
 			.unwrap()
-			.begin_render_pass(framebuffer.clone(), false, vec![[0.0, 0.0, 1.0, 1.0].into()])
+			.begin_render_pass(framebuffer.clone(), true, vec![[0.0, 0.0, 1.0, 1.0].into()])
 			.unwrap();
 
 		for mesh in &self.meshes {
-			command_buffer = command_buffer
-				.draw(
-					self.shared.pipeline.clone(),
-					DynamicState {
-						line_width: None,
-						viewports: Some(vec![
-							Viewport {
-								origin: [0.0, 0.0],
-								dimensions: [framebuffer.width() as f32, framebuffer.height() as f32],
-								depth_range: 0.0..1.0,
-							}
-						]),
-						scissors: None,
-					},
-					vec![mesh.buffer.clone()], (), ()
-				)
-				.unwrap();
+			command_buffer = unsafe {
+				command_buffer
+					.execute_commands(mesh.make_commands(
+						self.shared.device.clone(),
+						queue_family,
+						self.shared.subpass.clone(),
+						self.shared.pipeline.clone(),
+						[framebuffer.width() as f32, framebuffer.height() as f32],
+					))
+					.unwrap()
+			};
 		}
 
 		command_buffer.end_render_pass().unwrap().build().unwrap()
@@ -93,6 +87,7 @@ impl Drawable for MeshBatch {
 pub struct MeshBatchShared {
 	device: Arc<Device>,
 	render_pass: Arc<RenderPassAbstract + Send + Sync>,
+	subpass: Subpass<Arc<RenderPassAbstract + Send + Sync>>,
 	pipeline: Arc<GraphicsPipelineAbstract + Send + Sync + 'static>,
 }
 impl MeshBatchShared {
@@ -100,10 +95,12 @@ impl MeshBatchShared {
 		let render_pass = Arc::new(
 			single_pass_renderpass!(
 				device.clone(),
-				attachments: { color: { load: Clear, store: Store, format: format, samples: 1 } },
+				attachments: { color: { load: Clear, store: Store, format: format, samples: 1, } },
 				pass: { color: [color], depth_stencil: {} }
 			).expect("failed to create render pass")
-		);
+		) as Arc<RenderPassAbstract + Send + Sync>;
+
+		let subpass = Subpass::from(render_pass.clone(), 0).expect("failed to create subpass");
 
 		let pipeline = Arc::new(
 			GraphicsPipeline::start()
@@ -115,15 +112,15 @@ impl MeshBatchShared {
 				.triangle_list()
 				.viewports_dynamic_scissors_irrelevant(1)
 				.fragment_shader(
-					fs::Shader::load(device.clone()).expect("failed to load shader module"),
+					fs::Shader::load(device.clone()).expect("failed to load shader module").main_entry_point(),
 					()
 				)
-				.render_pass(Subpass::from(render_pass.clone(), 0).expect("failed to create subpass"))
+				.render_pass(subpass.clone())
 				.build(device.clone())
 				.expect("failed to create pipeline")
 		);
 
-		Arc::new(Self { device: device, render_pass: render_pass, pipeline: pipeline })
+		Arc::new(Self { device: device, render_pass: render_pass, subpass: subpass, pipeline: pipeline })
 	}
 }
 
@@ -132,7 +129,7 @@ pub struct Triangle {
 }
 impl Triangle {
 	pub fn new(
-		queue: Arc<Queue>
+		queue: Arc<Queue>,
 	) -> Result<(Self, CommandBufferExecFuture<NowFuture, AutoCommandBuffer>), DeviceMemoryAllocError> {
 		ImmutableBuffer::from_iter(
 			[
@@ -143,6 +140,38 @@ impl Triangle {
 			BufferUsage::vertex_buffer(),
 			queue,
 		).map(|(buffer, future)| (Self { buffer: buffer }, future))
+	}
+
+	fn make_commands<R, Gp>(
+		&self,
+		device: Arc<Device>,
+		queue_family: QueueFamily,
+		subpass: Subpass<R>,
+		pipeline: Gp,
+		dimensions: [f32; 2]
+	) -> AutoCommandBuffer where
+	R: RenderPassAbstract + Clone + Send + Sync + 'static,
+	Gp: GraphicsPipelineAbstract + Send + Sync + 'static + Clone {
+		AutoCommandBufferBuilder::secondary_graphics_one_time_submit(device, queue_family, subpass)
+			.unwrap()
+			.draw(
+				pipeline,
+				DynamicState {
+					line_width: None,
+					viewports: Some(vec![
+						Viewport {
+							origin: [0.0, 0.0],
+							dimensions: dimensions,
+							depth_range: 0.0..1.0,
+						}
+					]),
+					scissors: None,
+				},
+				vec![self.buffer.clone()], (), ()
+			)
+			.unwrap()
+			.build()
+			.unwrap()
 	}
 }
 
