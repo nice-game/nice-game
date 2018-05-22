@@ -1,7 +1,5 @@
 extern crate nice_game;
 #[macro_use]
-extern crate lazy_static;
-#[macro_use]
 extern crate vulkano;
 #[macro_use]
 extern crate vulkano_shader_derive;
@@ -37,7 +35,7 @@ fn main() {
 	);
 
 	let mesh_batch_shared = MeshBatchShared::new(window.device().clone(), window.format());
-	let mut mesh_batch = MeshBatch::new(&mesh_batch_shared, &mut window);
+	let mut mesh_batch = MeshBatch::new(mesh_batch_shared, &mut window);
 	mesh_batch.add_triangle(Triangle::new(window.queue().clone()).unwrap().0);
 
 	loop {

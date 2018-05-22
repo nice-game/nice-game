@@ -4,7 +4,6 @@ version = "0.1.0"
 authors = ["IcyDefiance <icydefiance@gmail.com>"]
 
 [dependencies]
-lazy_static = "1.0"
 nice-game = { path = "../../" }
 vulkano = "0.9"
 vulkano-shader-derive = "0.9"
