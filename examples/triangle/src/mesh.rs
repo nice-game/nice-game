@@ -81,24 +81,20 @@ impl Drawable for MeshBatch {
 			.unwrap();
 
 		for mesh in &self.meshes {
+			let dynamic_state = DynamicState {
+				line_width: None,
+				viewports: Some(vec![
+					Viewport {
+						origin: [0.0, 0.0],
+						dimensions: [framebuffer.width() as f32, framebuffer.height() as f32],
+						depth_range: 0.0..1.0,
+					}
+				]),
+				scissors: None,
+			};
+
 			command_buffer = command_buffer
-				.draw(
-					self.pipeline.clone(),
-					DynamicState {
-						line_width: None,
-						viewports: Some(vec![
-							Viewport {
-								origin: [0.0, 0.0],
-								dimensions: [framebuffer.width() as f32, framebuffer.height() as f32],
-								depth_range: 0.0..1.0,
-							}
-						]),
-						scissors: None,
-					},
-					vec![mesh.buffer.clone()],
-					(),
-					()
-				)
+				.draw(self.pipeline.clone(), dynamic_state, vec![mesh.buffer.clone()], (), ())
 				.unwrap();
 		}
 

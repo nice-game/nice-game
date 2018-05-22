@@ -12,10 +12,8 @@ use std::{
 use vulkano::{
 	device::{Device, DeviceExtensions, Queue},
 	format::Format,
-	framebuffer::FramebufferAbstract,
 	image::ImageViewAccess,
 	instance::{Features, PhysicalDevice},
-	image::swapchain::SwapchainImage,
 	swapchain::{acquire_next_image, AcquireError, PresentMode, Surface, SurfaceTransform, Swapchain, SwapchainCreationError},
 	sync::{now, FlushError, GpuFuture},
 };
@@ -162,17 +160,10 @@ impl Window {
 			Box::new(acquire_future)
 		};
 		for drawable in drawables {
-			future = Box::new(
-				future
-					.then_execute(
-						self.queue.clone(),
-						drawable.commands(self.queue.family(), image_num, &self.images[image_num])
-					)
-					.unwrap()
-			);
+			let commands = drawable.commands(self.queue.family(), image_num, &self.images[image_num]);
+			future = Box::new(future.then_execute(self.queue.clone(), commands).unwrap());
 		}
-		let future = future
-			.then_swapchain_present(self.queue.clone(), self.swapchain.clone(), image_num)
+		let future = future.then_swapchain_present(self.queue.clone(), self.swapchain.clone(), image_num)
 			.then_signal_fence_and_flush();
 		self.previous_frame_end = match future {
 			Ok(future) => Some(Box::new(future)),
