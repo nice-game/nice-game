@@ -6,7 +6,7 @@ extern crate vulkano_shader_derive;
 
 mod mesh;
 
-use mesh::{MeshBatch, MeshBatchShared, Triangle};
+use mesh::{MeshBatch, MeshBatchShaders, MeshBatchShared, Triangle};
 use nice_game::{
 	Context,
 	Version,
@@ -34,8 +34,14 @@ fn main() {
 		"nIce Game"
 	);
 
-	let mesh_batch_shared = MeshBatchShared::new(window.device().clone(), window.format());
-	let mut mesh_batch = MeshBatch::new(mesh_batch_shared, &mut window);
+	let mut mesh_batch =
+		MeshBatch::new(
+			MeshBatchShared::new(
+				&MeshBatchShaders::new(window.device().clone()),
+				window.format(),
+			),
+			&mut window
+		);
 	mesh_batch.add_triangle(Triangle::new(window.queue().clone()).unwrap().0);
 
 	loop {

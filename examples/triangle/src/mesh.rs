@@ -56,28 +56,32 @@ impl Drawable for MeshBatch {
 			}
 		}
 
-		let render_pass = &self.shared.render_pass;
+		let render_pass = self.shared.subpass.render_pass();
 		let framebuffer = self.framebuffers[image_num].get_or_insert_with(|| {
 			Arc::new(Framebuffer::start(render_pass.clone()).add(image.clone()).unwrap().build().unwrap())
 		});
 
-		let mut command_buffer = AutoCommandBufferBuilder::primary_one_time_submit(self.shared.device.clone(), queue_family)
-			.unwrap()
-			.begin_render_pass(framebuffer.clone(), true, vec![[0.0, 0.0, 1.0, 1.0].into()])
-			.unwrap();
+		let mut command_buffer =
+			AutoCommandBufferBuilder::primary_one_time_submit(self.shared.device.clone(), queue_family)
+				.unwrap()
+				.begin_render_pass(framebuffer.clone(), true, vec![[0.0, 0.0, 1.0, 1.0].into()])
+				.unwrap();
 
 		for mesh in &self.meshes {
-			command_buffer = unsafe {
-				command_buffer
-					.execute_commands(mesh.make_commands(
-						self.shared.device.clone(),
-						queue_family,
-						self.shared.subpass.clone(),
-						self.shared.pipeline.clone(),
-						[framebuffer.width() as f32, framebuffer.height() as f32],
-					))
-					.unwrap()
-			};
+			command_buffer =
+				unsafe {
+					command_buffer
+						.execute_commands(
+							mesh.make_commands(
+								self.shared.device.clone(),
+								queue_family,
+								self.shared.subpass.clone(),
+								self.shared.pipeline.clone(),
+								[framebuffer.width() as f32, framebuffer.height() as f32],
+							)
+						)
+						.unwrap()
+				};
 		}
 
 		command_buffer.end_render_pass().unwrap().build().unwrap()
@@ -86,41 +90,55 @@ impl Drawable for MeshBatch {
 
 pub struct MeshBatchShared {
 	device: Arc<Device>,
-	render_pass: Arc<RenderPassAbstract + Send + Sync>,
 	subpass: Subpass<Arc<RenderPassAbstract + Send + Sync>>,
 	pipeline: Arc<GraphicsPipelineAbstract + Send + Sync + 'static>,
 }
 impl MeshBatchShared {
-	pub fn new(device: Arc<Device>, format: Format) -> Arc<Self> {
-		let render_pass = Arc::new(
-			single_pass_renderpass!(
-				device.clone(),
-				attachments: { color: { load: Clear, store: Store, format: format, samples: 1, } },
-				pass: { color: [color], depth_stencil: {} }
-			).expect("failed to create render pass")
-		) as Arc<RenderPassAbstract + Send + Sync>;
-
-		let subpass = Subpass::from(render_pass.clone(), 0).expect("failed to create subpass");
+	pub fn new(shaders: &MeshBatchShaders, format: Format) -> Arc<Self> {
+		let subpass =
+			Subpass::from(
+				Arc::new(
+					single_pass_renderpass!(
+						shaders.device.clone(),
+						attachments: { color: { load: Clear, store: Store, format: format, samples: 1, } },
+						pass: { color: [color], depth_stencil: {} }
+					).expect("failed to create render pass")
+				) as Arc<RenderPassAbstract + Send + Sync>,
+				0
+			).expect("failed to create subpass");
 
 		let pipeline = Arc::new(
 			GraphicsPipeline::start()
 				.vertex_input_single_buffer::<TriangleVertex>()
-				.vertex_shader(
-					vs::Shader::load(device.clone()).expect("failed to load shader module").main_entry_point(),
-					()
-				)
+				.vertex_shader(shaders.vertex_shader.main_entry_point(), ())
 				.triangle_list()
 				.viewports_dynamic_scissors_irrelevant(1)
-				.fragment_shader(
-					fs::Shader::load(device.clone()).expect("failed to load shader module").main_entry_point(),
-					()
-				)
+				.fragment_shader(shaders.fragment_shader.main_entry_point(), ())
 				.render_pass(subpass.clone())
-				.build(device.clone())
+				.build(shaders.device.clone())
 				.expect("failed to create pipeline")
 		);
 
-		Arc::new(Self { device: device, render_pass: render_pass, subpass: subpass, pipeline: pipeline })
+		Arc::new(Self {
+			device: shaders.device.clone(),
+			subpass: subpass,
+			pipeline: pipeline
+		})
+	}
+}
+
+pub struct MeshBatchShaders {
+	device: Arc<Device>,
+	vertex_shader: vs::Shader,
+	fragment_shader: fs::Shader,
+}
+impl MeshBatchShaders {
+	pub fn new(device: Arc<Device>) -> Self {
+		Self {
+			device: device.clone(),
+			vertex_shader: vs::Shader::load(device.clone()).expect("failed to load shader module"),
+			fragment_shader: fs::Shader::load(device).expect("failed to load shader module"),
+		}
 	}
 }
 
@@ -142,16 +160,14 @@ impl Triangle {
 		).map(|(buffer, future)| (Self { buffer: buffer }, future))
 	}
 
-	fn make_commands<R, Gp>(
+	fn make_commands(
 		&self,
 		device: Arc<Device>,
 		queue_family: QueueFamily,
-		subpass: Subpass<R>,
-		pipeline: Gp,
+		subpass: Subpass<impl RenderPassAbstract + Clone + Send + Sync + 'static>,
+		pipeline: impl GraphicsPipelineAbstract + Send + Sync + 'static + Clone,
 		dimensions: [f32; 2]
-	) -> AutoCommandBuffer where
-	R: RenderPassAbstract + Clone + Send + Sync + 'static,
-	Gp: GraphicsPipelineAbstract + Send + Sync + 'static + Clone {
+	) -> AutoCommandBuffer {
 		AutoCommandBufferBuilder::secondary_graphics_one_time_submit(device, queue_family, subpass)
 			.unwrap()
 			.draw(
