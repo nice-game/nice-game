@@ -1,6 +1,7 @@
 use nice_game::{Drawable, RenderTarget};
 use std::sync::{
 	Arc,
+	Mutex,
 	atomic::{AtomicBool, Ordering},
 };
 use vulkano::{
@@ -23,19 +24,24 @@ use vulkano::{
 pub struct MeshBatch {
 	shared: Arc<MeshBatchShared>,
 	meshes: Vec<Triangle>,
-	framebuffers: Vec<Option<Arc<FramebufferAbstract + Send + Sync + 'static>>>,
-	recreated: Arc<AtomicBool>,
+	framebuffers: Arc<Mutex<Vec<Option<Arc<FramebufferAbstract + Send + Sync + 'static>>>>>,
 }
 impl MeshBatch {
 	pub fn new(shared: Arc<MeshBatchShared>, target: &mut RenderTarget) -> Self {
-		let recreated = Arc::<AtomicBool>::default();
-		target.register(recreated.clone());
+		let framebuffers = Arc::<Mutex<Vec<Option<Arc<FramebufferAbstract + Send + Sync + 'static>>>>>::default();
+
+		{
+			let framebuffers = framebuffers.clone();
+			let image_count = target.image_count();
+			target.register_on_recreated(Box::new(move |_| {
+				*framebuffers.lock().unwrap() = (0..image_count).map(|_| None).collect();
+			}));
+		}
 
 		Self {
 			shared: shared,
 			meshes: vec![],
-			framebuffers: (0..target.image_count()).map(|_| None).collect(),
-			recreated: recreated,
+			framebuffers: framebuffers,
 		}
 	}
 
@@ -50,21 +56,17 @@ impl Drawable for MeshBatch {
 		image_num: usize,
 		image: &Arc<ImageViewAccess + Send + Sync + 'static>,
 	) -> AutoCommandBuffer {
-		if self.recreated.swap(false, Ordering::Relaxed) {
-			for framebuffer in &mut self.framebuffers {
-				*framebuffer = None;
-			}
-		}
-
 		let render_pass = self.shared.subpass.render_pass();
-		let framebuffer = self.framebuffers[image_num].get_or_insert_with(|| {
+		let framebuffer = self.framebuffers.lock().unwrap()[image_num].get_or_insert_with(|| {
 			Arc::new(Framebuffer::start(render_pass.clone()).add(image.clone()).unwrap().build().unwrap())
-		});
+		}).clone();
+
+		let dimensions = [framebuffer.width() as f32, framebuffer.height() as f32];
 
 		let mut command_buffer =
 			AutoCommandBufferBuilder::primary_one_time_submit(self.shared.device.clone(), queue_family)
 				.unwrap()
-				.begin_render_pass(framebuffer.clone(), true, vec![[0.0, 0.0, 1.0, 1.0].into()])
+				.begin_render_pass(framebuffer, true, vec![[0.0, 0.0, 1.0, 1.0].into()])
 				.unwrap();
 
 		for mesh in &self.meshes {
@@ -77,7 +79,7 @@ impl Drawable for MeshBatch {
 								queue_family,
 								self.shared.subpass.clone(),
 								self.shared.pipeline.clone(),
-								[framebuffer.width() as f32, framebuffer.height() as f32],
+								dimensions,
 							)
 						)
 						.unwrap()

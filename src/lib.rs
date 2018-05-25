@@ -2,14 +2,12 @@ extern crate vulkano;
 extern crate vulkano_win;
 extern crate winit;
 
+pub mod window;
+mod event;
+
 pub use vulkano::instance::Version;
 
-pub mod window;
-
-use std::sync::{
-	Arc,
-	atomic::AtomicBool,
-};
+use std::sync::Arc;
 use vulkano::{
 	command_buffer::AutoCommandBuffer,
 	image::ImageViewAccess,
@@ -42,10 +40,16 @@ impl Context {
 }
 
 pub trait RenderTarget {
-	fn register(&mut self, recreated: Arc<AtomicBool>);
+	fn register_on_recreated(&mut self, listener: Box<FnMut(&[u32; 2])>) -> usize;
+	fn unregister_on_recreated(&mut self, key: &usize) -> Option<Box<FnMut(&[u32; 2])>>;
 	fn image_count(&self) -> usize;
 }
 
 pub trait Drawable {
-	fn commands(&mut self, queue_family: QueueFamily, image_num: usize, image: &Arc<ImageViewAccess + Send + Sync + 'static>) -> AutoCommandBuffer;
+	fn commands(
+		&mut self,
+		queue_family: QueueFamily,
+		image_num: usize,
+		image: &Arc<ImageViewAccess + Send + Sync + 'static>
+	) -> AutoCommandBuffer;
 }

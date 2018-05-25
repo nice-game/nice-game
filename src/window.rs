@@ -1,21 +1,22 @@
-pub use winit::{Event, WindowEvent, WindowId};
+pub use winit::{ Event, WindowEvent, WindowId };
 
-use {Context, Drawable, RenderTarget};
-use std::{
-	collections::HashMap,
-	iter::Iterator,
-	sync::{
-		Arc,
-		atomic::{AtomicBool, Ordering}
-	},
-};
+use { Context, Drawable, RenderTarget, event::Notifier };
+use std::{ collections::HashMap, iter::Iterator, sync::{ Arc, atomic::{ AtomicBool, Ordering } }};
 use vulkano::{
-	device::{Device, DeviceExtensions, Queue},
+	device::{ Device, DeviceExtensions, Queue },
 	format::Format,
 	image::ImageViewAccess,
-	instance::{Features, PhysicalDevice},
-	swapchain::{acquire_next_image, AcquireError, PresentMode, Surface, SurfaceTransform, Swapchain, SwapchainCreationError},
-	sync::{now, FlushError, GpuFuture},
+	instance::{ Features, PhysicalDevice },
+	swapchain::{
+		acquire_next_image,
+		AcquireError,
+		PresentMode,
+		Surface,
+		SurfaceTransform,
+		Swapchain,
+		SwapchainCreationError
+	},
+	sync::{ now, FlushError, GpuFuture },
 };
 use vulkano_win::VkSurfaceBuild;
 use winit;
@@ -55,7 +56,7 @@ pub struct Window {
 	images: Vec<Arc<ImageViewAccess + Send + Sync + 'static>>,
 	previous_frame_end: Option<Box<GpuFuture>>,
 	resized: Arc<AtomicBool>,
-	recreated_notifiers: HashMap<usize, Arc<AtomicBool>>,
+	recreated_notifier: Notifier<[u32; 2]>,
 	recreated_next_id: usize,
 }
 impl Window {
@@ -113,7 +114,7 @@ impl Window {
 			images: images,
 			previous_frame_end: previous_frame_end,
 			resized: resized,
-			recreated_notifiers: HashMap::new(),
+			recreated_notifier: Notifier::new(),
 			recreated_next_id: 0,
 		}
 	}
@@ -127,10 +128,7 @@ impl Window {
 
 			let (swapchain, images) = match self.swapchain.recreate_with_dimension(dimensions) {
 				Ok(ret) => {
-					for recreated in self.recreated_notifiers.values() {
-						recreated.store(true, Ordering::Relaxed);
-					}
-
+					self.recreated_notifier.notify(&dimensions);
 					ret
 				},
 				Err(SwapchainCreationError::UnsupportedDimensions) => {
@@ -189,12 +187,12 @@ impl Window {
 	}
 }
 impl RenderTarget for Window {
-	fn register(&mut self, recreated: Arc<AtomicBool>) {
-		while self.recreated_notifiers.contains_key(&self.recreated_next_id) {
-			self.recreated_next_id += 1;
-		}
+	fn register_on_recreated(&mut self, listener: Box<FnMut(&[u32; 2])>) -> usize {
+		self.recreated_notifier.register(listener)
+	}
 
-		self.recreated_notifiers.insert(self.recreated_next_id, recreated);
+	fn unregister_on_recreated(&mut self, key: &usize) -> Option<Box<FnMut(&[u32; 2])>> {
+		self.recreated_notifier.unregister(key)
 	}
 
 	fn image_count(&self) -> usize {
