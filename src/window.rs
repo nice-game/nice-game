@@ -1,6 +1,6 @@
 pub use winit::{ Event, WindowEvent, WindowId };
 
-use { Context, Drawable, RenderTarget, event::Notifier };
+use { Context, Drawable, RenderTarget };
 use std::{ collections::HashMap, iter::Iterator, sync::{ Arc, atomic::{ AtomicBool, Ordering } }};
 use vulkano::{
 	device::{ Device, DeviceExtensions, Queue },
@@ -56,8 +56,6 @@ pub struct Window {
 	images: Vec<Arc<ImageViewAccess + Send + Sync + 'static>>,
 	previous_frame_end: Option<Box<GpuFuture>>,
 	resized: Arc<AtomicBool>,
-	recreated_notifier: Notifier<[u32; 2]>,
-	recreated_next_id: usize,
 }
 impl Window {
 	pub fn new<T: Into<String>>(ctx: &Context, events: &mut EventsLoop, title: T) -> Self {
@@ -114,8 +112,6 @@ impl Window {
 			images: images,
 			previous_frame_end: previous_frame_end,
 			resized: resized,
-			recreated_notifier: Notifier::new(),
-			recreated_next_id: 0,
 		}
 	}
 
@@ -127,15 +123,12 @@ impl Window {
 				.unwrap_or(self.surface.window().get_inner_size().map(|(x, y)| [x, y]).unwrap());
 
 			let (swapchain, images) = match self.swapchain.recreate_with_dimension(dimensions) {
-				Ok(ret) => {
-					self.recreated_notifier.notify(&dimensions);
-					ret
-				},
+				Ok(ret) => ret,
 				Err(SwapchainCreationError::UnsupportedDimensions) => {
 					self.resized.store(true, Ordering::Relaxed);
 					return;
 				},
-				Err(err) => panic!("{:?}", err)
+				Err(err) => panic!("{:?}", err),
 			};
 			let images = images.into_iter().map(|x| x as _).collect();
 
@@ -187,14 +180,6 @@ impl Window {
 	}
 }
 impl RenderTarget for Window {
-	fn register_on_recreated(&mut self, listener: Box<FnMut(&[u32; 2])>) -> usize {
-		self.recreated_notifier.register(listener)
-	}
-
-	fn unregister_on_recreated(&mut self, key: &usize) -> Option<Box<FnMut(&[u32; 2])>> {
-		self.recreated_notifier.unregister(key)
-	}
-
 	fn image_count(&self) -> usize {
 		self.images.len()
 	}

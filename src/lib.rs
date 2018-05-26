@@ -3,7 +3,6 @@ extern crate vulkano_win;
 extern crate winit;
 
 pub mod window;
-mod event;
 
 pub use vulkano::instance::Version;
 
@@ -40,8 +39,6 @@ impl Context {
 }
 
 pub trait RenderTarget {
-	fn register_on_recreated(&mut self, listener: Box<FnMut(&[u32; 2])>) -> usize;
-	fn unregister_on_recreated(&mut self, key: &usize) -> Option<Box<FnMut(&[u32; 2])>>;
 	fn image_count(&self) -> usize;
 }
 

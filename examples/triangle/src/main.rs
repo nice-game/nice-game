@@ -6,16 +6,12 @@ extern crate vulkano_shader_derive;
 
 mod mesh;
 
-use mesh::{MeshBatch, MeshBatchShaders, MeshBatchShared, Triangle};
+use mesh::{ MeshBatch, MeshBatchShaders, MeshBatchShared, Triangle };
 use nice_game::{
 	Context,
+	RenderTarget,
 	Version,
-	window::{
-		Event,
-		EventsLoop,
-		Window,
-		WindowEvent,
-	}
+	window::{ Event, EventsLoop, Window, WindowEvent }
 };
 
 fn main() {
@@ -40,7 +36,7 @@ fn main() {
 				&MeshBatchShaders::new(window.device().clone()),
 				window.format(),
 			),
-			&mut window
+			window.image_count()
 		);
 	mesh_batch.add_triangle(Triangle::new(window.queue().clone()).unwrap().0);
 

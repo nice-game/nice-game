@@ -1,48 +1,27 @@
-use nice_game::{Drawable, RenderTarget};
-use std::sync::{
-	Arc,
-	Mutex,
-	atomic::{AtomicBool, Ordering},
-};
+use nice_game::Drawable;
+use std::sync::{ Arc, Weak };
 use vulkano::{
-	buffer::{BufferUsage, ImmutableBuffer},
-	command_buffer::{AutoCommandBuffer, AutoCommandBufferBuilder, CommandBufferExecFuture, DynamicState},
-	device::{Device, Queue},
+	buffer::{ BufferUsage, ImmutableBuffer },
+	command_buffer::{ AutoCommandBuffer, AutoCommandBufferBuilder, CommandBufferExecFuture, DynamicState },
+	device::{ Device, Queue },
 	format::Format,
-	framebuffer::{Framebuffer, FramebufferAbstract, RenderPassAbstract, Subpass},
+	framebuffer::{ Framebuffer, FramebufferAbstract, RenderPassAbstract, Subpass },
 	image::ImageViewAccess,
 	instance::QueueFamily,
 	memory::DeviceMemoryAllocError,
-	pipeline::{
-		GraphicsPipeline,
-		GraphicsPipelineAbstract,
-		viewport::Viewport,
-	},
+	pipeline::{ GraphicsPipeline, GraphicsPipelineAbstract, viewport::Viewport },
 	sync::NowFuture,
 };
 
 pub struct MeshBatch {
 	shared: Arc<MeshBatchShared>,
 	meshes: Vec<Triangle>,
-	framebuffers: Arc<Mutex<Vec<Option<Arc<FramebufferAbstract + Send + Sync + 'static>>>>>,
+	framebuffers:
+		Vec<Option<(Weak<ImageViewAccess + Send + Sync + 'static>, Arc<FramebufferAbstract + Send + Sync + 'static>)>>,
 }
 impl MeshBatch {
-	pub fn new(shared: Arc<MeshBatchShared>, target: &mut RenderTarget) -> Self {
-		let framebuffers = Arc::<Mutex<Vec<Option<Arc<FramebufferAbstract + Send + Sync + 'static>>>>>::default();
-
-		{
-			let framebuffers = framebuffers.clone();
-			let image_count = target.image_count();
-			target.register_on_recreated(Box::new(move |_| {
-				*framebuffers.lock().unwrap() = (0..image_count).map(|_| None).collect();
-			}));
-		}
-
-		Self {
-			shared: shared,
-			meshes: vec![],
-			framebuffers: framebuffers,
-		}
+	pub fn new(shared: Arc<MeshBatchShared>, images_len: usize) -> Self {
+		Self { shared: shared, meshes: vec![], framebuffers: vec![None; images_len] }
 	}
 
 	pub fn add_triangle(&mut self, triangle: Triangle) {
@@ -56,17 +35,29 @@ impl Drawable for MeshBatch {
 		image_num: usize,
 		image: &Arc<ImageViewAccess + Send + Sync + 'static>,
 	) -> AutoCommandBuffer {
-		let render_pass = self.shared.subpass.render_pass();
-		let framebuffer = self.framebuffers.lock().unwrap()[image_num].get_or_insert_with(|| {
-			Arc::new(Framebuffer::start(render_pass.clone()).add(image.clone()).unwrap().build().unwrap())
-		}).clone();
+		let framebuffer = self.framebuffers[image_num].as_ref()
+			.and_then(|(old_image, fb)| {
+				old_image.upgrade().iter().filter(|old_image| Arc::ptr_eq(image, &old_image)).next().map(|_| fb.clone())
+			})
+			.unwrap_or_else(|| {
+				let framebuffer =
+					Arc::new(
+						Framebuffer::start(self.shared.subpass.render_pass().clone())
+							.add(image.clone())
+							.unwrap()
+							.build()
+							.unwrap()
+					);
+				self.framebuffers[image_num] = Some((Arc::downgrade(image), framebuffer.clone()));
+				framebuffer
+			});
 
 		let dimensions = [framebuffer.width() as f32, framebuffer.height() as f32];
 
 		let mut command_buffer =
 			AutoCommandBufferBuilder::primary_one_time_submit(self.shared.device.clone(), queue_family)
 				.unwrap()
-				.begin_render_pass(framebuffer, true, vec![[0.0, 0.0, 1.0, 1.0].into()])
+				.begin_render_pass(framebuffer, true, vec![[0.1, 0.1, 0.1, 1.0].into()])
 				.unwrap();
 
 		for mesh in &self.meshes {
