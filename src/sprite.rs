@@ -1,16 +1,15 @@
-use { Drawable, ObjectId, ObjectIdRoot, RenderTarget };
+use { Drawable, ObjectId, ObjectIdRoot, RenderTarget, window::Window };
 use std::sync::{ Arc, Weak };
 use vulkano::{
 	buffer::{ BufferUsage, ImmutableBuffer },
-	command_buffer::{ AutoCommandBuffer, AutoCommandBufferBuilder, CommandBufferExecFuture, DynamicState },
-	device::{ Device, Queue },
+	command_buffer::{ AutoCommandBuffer, AutoCommandBufferBuilder, DynamicState },
+	device::{ Device },
 	format::Format,
 	framebuffer::{ Framebuffer, FramebufferAbstract, RenderPassAbstract, Subpass },
 	image::ImageViewAccess,
 	instance::QueueFamily,
 	memory::DeviceMemoryAllocError,
 	pipeline::{ GraphicsPipeline, GraphicsPipelineAbstract, viewport::Viewport },
-	sync::NowFuture,
 };
 
 pub struct SpriteBatch {
@@ -148,18 +147,21 @@ pub struct Triangle {
 	buffer: Arc<ImmutableBuffer<[TriangleVertex]>>,
 }
 impl Triangle {
-	pub fn new(
-		queue: Arc<Queue>,
-	) -> Result<(Self, CommandBufferExecFuture<NowFuture, AutoCommandBuffer>), DeviceMemoryAllocError> {
-		ImmutableBuffer::from_iter(
-			[
-				TriangleVertex { position: [-0.5, -0.25] },
-				TriangleVertex { position: [0.0, 0.5] },
-				TriangleVertex { position: [0.25, -0.1] },
-			].iter().cloned(),
-			BufferUsage::vertex_buffer(),
-			queue,
-		).map(|(buffer, future)| (Self { buffer: buffer }, future))
+	pub fn new(window: &mut Window) -> Result<Self, DeviceMemoryAllocError> {
+		let (buffer, future) =
+			ImmutableBuffer::from_iter(
+				[
+					TriangleVertex { position: [-0.5, -0.25] },
+					TriangleVertex { position: [0.0, 0.5] },
+					TriangleVertex { position: [0.25, -0.1] },
+				].iter().cloned(),
+				BufferUsage::vertex_buffer(),
+				window.queue().clone(),
+			)?;
+
+		window.join_future(future);
+
+		Ok(Self { buffer: buffer })
 	}
 
 	fn make_commands(

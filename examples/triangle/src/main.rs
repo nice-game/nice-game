@@ -24,8 +24,7 @@ fn main() {
 			"nIce Game"
 		);
 
-	let (triangle, future) = Triangle::new(window.queue().clone()).unwrap();
-	window.join_future(future);
+	let triangle = Triangle::new(&mut window).unwrap();
 
 	let mut mesh_batch =
 		SpriteBatch::new(SpriteBatchShared::new(&SpriteBatchShaders::new(window.device().clone()), window.format()), &window);
