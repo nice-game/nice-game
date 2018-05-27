@@ -52,17 +52,15 @@ impl Drawable for SpriteBatch {
 			if let Some(framebuffer) = framebuffer {
 				framebuffer
 			} else {
-				Framebuffer::start(self.shared.subpass.render_pass().clone())
+				let framebuffer = Framebuffer::start(self.shared.subpass.render_pass().clone())
 					.add(image.clone())
 					.and_then(|fb| fb.build())
-					.map(|fb| {
-						let fb = Arc::new(fb);
-						self.framebuffers[image_num] = Some((Arc::downgrade(image), fb.clone()));
-						fb
-					})
+					.map(|fb| Arc::new(fb))
 					.map_err(|err| {
 						match err { FramebufferCreationError::OomError(err) => err, err => unreachable!("{}", err) }
-					})?
+					})?;
+				self.framebuffers[image_num] = Some((Arc::downgrade(image), framebuffer.clone()));
+				framebuffer
 			};
 
 		let dimensions = [framebuffer.width() as f32, framebuffer.height() as f32];
