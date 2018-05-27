@@ -2,6 +2,7 @@ extern crate nice_game;
 
 use nice_game::{
 	Context,
+	RenderTarget,
 	Version,
 	sprite::{ SpriteBatch, SpriteBatchShaders, SpriteBatchShared, Triangle },
 	window::{ Event, EventsLoop, Window, WindowEvent },

@@ -184,19 +184,19 @@ impl Window {
 			};
 	}
 
-	pub fn device(&self) -> &Arc<Device> {
+	pub(super) fn device(&self) -> &Arc<Device> {
 		&self.device
 	}
 
-	pub fn format(&self) -> Format {
-		self.swapchain.format()
-	}
-
-	pub fn queue(&self) -> &Arc<Queue> {
+	pub(super) fn queue(&self) -> &Arc<Queue> {
 		&self.queue
 	}
 }
 impl RenderTarget for Window {
+	fn format(&self) -> Format {
+		self.swapchain.format()
+	}
+
 	fn id_root(&self) -> &ObjectIdRoot {
 		&self.id_root
 	}

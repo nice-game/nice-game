@@ -13,6 +13,7 @@ pub use vulkano::instance::Version;
 use std::sync::{ Arc, Weak };
 use vulkano::{
 	command_buffer::AutoCommandBuffer,
+	format::Format,
 	image::ImageViewAccess,
 	instance::{ ApplicationInfo, Instance, QueueFamily },
 };
@@ -65,6 +66,7 @@ impl ObjectIdRoot {
 }
 
 pub trait RenderTarget {
+	fn format(&self) -> Format;
 	fn id_root(&self) -> &ObjectIdRoot;
 	fn image_count(&self) -> usize;
 }
