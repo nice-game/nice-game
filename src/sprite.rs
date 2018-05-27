@@ -81,7 +81,7 @@ impl Drawable for SpriteBatch {
 								self.shared.subpass.clone(),
 								self.shared.pipeline.clone(),
 								dimensions,
-							)
+							)?
 						)
 						.unwrap()
 				};
@@ -179,27 +179,28 @@ impl Triangle {
 		subpass: Subpass<impl RenderPassAbstract + Clone + Send + Sync + 'static>,
 		pipeline: impl GraphicsPipelineAbstract + Send + Sync + 'static + Clone,
 		dimensions: [f32; 2]
-	) -> AutoCommandBuffer {
-		AutoCommandBufferBuilder::secondary_graphics_one_time_submit(device, queue_family, subpass)
-			.unwrap()
-			.draw(
-				pipeline,
-				DynamicState {
-					line_width: None,
-					viewports: Some(vec![
-						Viewport {
-							origin: [0.0, 0.0],
-							dimensions: dimensions,
-							depth_range: 0.0..1.0,
-						}
-					]),
-					scissors: None,
-				},
-				vec![self.buffer.clone()], (), ()
-			)
-			.unwrap()
-			.build()
-			.unwrap()
+	) -> Result<AutoCommandBuffer, OomError> {
+		Ok(
+			AutoCommandBufferBuilder::secondary_graphics_one_time_submit(device, queue_family, subpass)?
+				.draw(
+					pipeline,
+					DynamicState {
+						line_width: None,
+						viewports: Some(vec![
+							Viewport {
+								origin: [0.0, 0.0],
+								dimensions: dimensions,
+								depth_range: 0.0..1.0,
+							}
+						]),
+						scissors: None,
+					},
+					vec![self.buffer.clone()], (), ()
+				)
+				.unwrap()
+				.build()
+				.map_err(|err| match err { BuildError::OomError(err) => err, err => unreachable!("{}", err) })?
+		)
 	}
 }
 
