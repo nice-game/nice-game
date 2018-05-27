@@ -1,6 +1,6 @@
 pub use winit::{ Event, WindowEvent, WindowId };
 
-use { Context, Drawable, RenderTarget };
+use { Context, Drawable, ObjectIdRoot, RenderTarget };
 use std::{ collections::HashMap, iter::Iterator, sync::{ Arc, atomic::{ AtomicBool, Ordering } }};
 use vulkano::{
 	device::{ Device, DeviceExtensions, Queue },
@@ -56,6 +56,7 @@ pub struct Window {
 	images: Vec<Arc<ImageViewAccess + Send + Sync + 'static>>,
 	previous_frame_end: Option<Box<GpuFuture>>,
 	resized: Arc<AtomicBool>,
+	id_root: ObjectIdRoot,
 }
 impl Window {
 	pub fn new<T: Into<String>>(ctx: &Context, events: &mut EventsLoop, title: T) -> Self {
@@ -112,6 +113,7 @@ impl Window {
 			images: images,
 			previous_frame_end: previous_frame_end,
 			resized: resized,
+			id_root: ObjectIdRoot::new(),
 		}
 	}
 
@@ -152,7 +154,7 @@ impl Window {
 			Box::new(acquire_future)
 		};
 		for drawable in drawables {
-			let commands = drawable.commands(self.queue.family(), image_num, &self.images[image_num]);
+			let commands = drawable.commands(&self.id_root, self.queue.family(), image_num, &self.images[image_num]);
 			future = Box::new(future.then_execute(self.queue.clone(), commands).unwrap());
 		}
 		let future = future.then_swapchain_present(self.queue.clone(), self.swapchain.clone(), image_num)
@@ -180,6 +182,10 @@ impl Window {
 	}
 }
 impl RenderTarget for Window {
+	fn id_root(&self) -> &ObjectIdRoot {
+		&self.id_root
+	}
+
 	fn image_count(&self) -> usize {
 		self.images.len()
 	}

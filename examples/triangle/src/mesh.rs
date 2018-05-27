@@ -1,4 +1,4 @@
-use nice_game::Drawable;
+use nice_game::{ Drawable, ObjectId, ObjectIdRoot, RenderTarget };
 use std::sync::{ Arc, Weak };
 use vulkano::{
 	buffer::{ BufferUsage, ImmutableBuffer },
@@ -18,10 +18,16 @@ pub struct MeshBatch {
 	meshes: Vec<Triangle>,
 	framebuffers:
 		Vec<Option<(Weak<ImageViewAccess + Send + Sync + 'static>, Arc<FramebufferAbstract + Send + Sync + 'static>)>>,
+	target_id: ObjectId,
 }
 impl MeshBatch {
-	pub fn new(shared: Arc<MeshBatchShared>, images_len: usize) -> Self {
-		Self { shared: shared, meshes: vec![], framebuffers: vec![None; images_len] }
+	pub fn new(shared: Arc<MeshBatchShared>, target: &RenderTarget) -> Self {
+		Self {
+			shared: shared,
+			meshes: vec![],
+			framebuffers: vec![None; target.image_count()],
+			target_id: target.id_root().make_id()
+		}
 	}
 
 	pub fn add_triangle(&mut self, triangle: Triangle) {
@@ -31,10 +37,13 @@ impl MeshBatch {
 impl Drawable for MeshBatch {
 	fn commands(
 		&mut self,
+		target_id: &ObjectIdRoot,
 		queue_family: QueueFamily,
 		image_num: usize,
 		image: &Arc<ImageViewAccess + Send + Sync + 'static>,
 	) -> AutoCommandBuffer {
+		assert!(self.target_id.is_child_of(target_id));
+
 		let framebuffer = self.framebuffers[image_num].as_ref()
 			.and_then(|(old_image, fb)| {
 				old_image.upgrade().iter().filter(|old_image| Arc::ptr_eq(image, &old_image)).next().map(|_| fb.clone())

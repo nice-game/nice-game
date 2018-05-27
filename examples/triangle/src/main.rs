@@ -9,7 +9,6 @@ mod mesh;
 use mesh::{ MeshBatch, MeshBatchShaders, MeshBatchShared, Triangle };
 use nice_game::{
 	Context,
-	RenderTarget,
 	Version,
 	window::{ Event, EventsLoop, Window, WindowEvent }
 };
@@ -17,27 +16,22 @@ use nice_game::{
 fn main() {
 	let mut events = EventsLoop::new();
 
-	let mut window = Window::new(
-		&Context::new(
-			Some("Triangle Example"),
-			Some(Version {
-				major: env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap(),
-				minor: env!("CARGO_PKG_VERSION_MINOR").parse().unwrap(),
-				patch: env!("CARGO_PKG_VERSION_PATCH").parse().unwrap(),
-			}),
-		),
-		&mut events,
-		"nIce Game"
-	);
+	let mut window =
+		Window::new(
+			&Context::new(
+				Some("Triangle Example"),
+				Some(Version {
+					major: env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap(),
+					minor: env!("CARGO_PKG_VERSION_MINOR").parse().unwrap(),
+					patch: env!("CARGO_PKG_VERSION_PATCH").parse().unwrap(),
+				}),
+			),
+			&mut events,
+			"nIce Game"
+		);
 
 	let mut mesh_batch =
-		MeshBatch::new(
-			MeshBatchShared::new(
-				&MeshBatchShaders::new(window.device().clone()),
-				window.format(),
-			),
-			window.image_count()
-		);
+		MeshBatch::new(MeshBatchShared::new(&MeshBatchShaders::new(window.device().clone()), window.format()), &window);
 	mesh_batch.add_triangle(Triangle::new(window.queue().clone()).unwrap().0);
 
 	loop {

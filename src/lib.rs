@@ -6,7 +6,7 @@ pub mod window;
 
 pub use vulkano::instance::Version;
 
-use std::sync::Arc;
+use std::{ ptr::NonNull, sync::{ Arc, Weak, atomic::{ AtomicBool, AtomicUsize} } };
 use vulkano::{
 	command_buffer::AutoCommandBuffer,
 	image::ImageViewAccess,
@@ -38,13 +38,37 @@ impl Context {
 	}
 }
 
+pub struct ObjectId {
+	val: Weak<()>,
+}
+impl ObjectId {
+	pub fn is_child_of(&self, root: &ObjectIdRoot) -> bool {
+		self.val.upgrade().map_or(false, |val| Arc::ptr_eq(&val, &root.val))
+	}
+}
+
+pub struct ObjectIdRoot {
+	val: Arc<()>,
+}
+impl ObjectIdRoot {
+	fn new() -> Self {
+		Self { val: Arc::default() }
+	}
+
+	pub fn make_id(&self) -> ObjectId {
+		ObjectId { val: Arc::downgrade(&self.val) }
+	}
+}
+
 pub trait RenderTarget {
+	fn id_root(&self) -> &ObjectIdRoot;
 	fn image_count(&self) -> usize;
 }
 
 pub trait Drawable {
 	fn commands(
 		&mut self,
+		target_id: &ObjectIdRoot,
 		queue_family: QueueFamily,
 		image_num: usize,
 		image: &Arc<ImageViewAccess + Send + Sync + 'static>
