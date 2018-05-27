@@ -12,6 +12,7 @@ pub use vulkano::instance::Version;
 
 use std::sync::{ Arc, Weak };
 use vulkano::{
+	OomError,
 	command_buffer::AutoCommandBuffer,
 	format::Format,
 	image::ImageViewAccess,
@@ -24,25 +25,23 @@ pub struct Context {
 }
 impl Context {
 	pub fn new(name: Option<&str>, version: Option<Version>) -> Result<Self, InstanceCreationError> {
-		Ok(
-			Self {
-				instance:
-					Instance::new(
-						Some(&ApplicationInfo {
-							application_name: name.map(|x| x.into()),
-							application_version: version,
-							engine_name: Some("nIce Game".into()),
-							engine_version: Some(Version {
-								major: env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap(),
-								minor: env!("CARGO_PKG_VERSION_MINOR").parse().unwrap(),
-								patch: env!("CARGO_PKG_VERSION_PATCH").parse().unwrap(),
-							}),
+		Ok(Self {
+			instance:
+				Instance::new(
+					Some(&ApplicationInfo {
+						application_name: name.map(|x| x.into()),
+						application_version: version,
+						engine_name: Some("nIce Game".into()),
+						engine_version: Some(Version {
+							major: env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap(),
+							minor: env!("CARGO_PKG_VERSION_MINOR").parse().unwrap(),
+							patch: env!("CARGO_PKG_VERSION_PATCH").parse().unwrap(),
 						}),
-						&vulkano_win::required_extensions(),
-						None
-					)?
-			}
-		)
+					}),
+					&vulkano_win::required_extensions(),
+					None
+				)?
+		})
 	}
 }
 
@@ -81,5 +80,5 @@ pub trait Drawable {
 		queue_family: QueueFamily,
 		image_num: usize,
 		image: &Arc<ImageViewAccess + Send + Sync + 'static>
-	) -> AutoCommandBuffer;
+	) -> Result<AutoCommandBuffer, OomError>;
 }

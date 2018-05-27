@@ -6,7 +6,7 @@ use vulkano::{
 	command_buffer::{ AutoCommandBuffer, AutoCommandBufferBuilder, DynamicState },
 	device::{ Device },
 	format::Format,
-	framebuffer::{ Framebuffer, FramebufferAbstract, RenderPassAbstract, Subpass },
+	framebuffer::{ Framebuffer, FramebufferAbstract, FramebufferCreationError, RenderPassAbstract, Subpass },
 	image::ImageViewAccess,
 	instance::QueueFamily,
 	memory::DeviceMemoryAllocError,
@@ -41,7 +41,7 @@ impl Drawable for SpriteBatch {
 		queue_family: QueueFamily,
 		image_num: usize,
 		image: &Arc<ImageViewAccess + Send + Sync + 'static>,
-	) -> AutoCommandBuffer {
+	) -> Result<AutoCommandBuffer, OomError> {
 		assert!(self.target_id.is_child_of(target_id));
 
 		let framebuffer = self.framebuffers[image_num].as_ref()
@@ -53,6 +53,12 @@ impl Drawable for SpriteBatch {
 					Arc::new(
 						Framebuffer::start(self.shared.subpass.render_pass().clone())
 							.add(image.clone())
+							.map_err(|err| {
+								match err {
+									FramebufferCreationError::OomError(err) => err,
+									err => unreachable!("{}", err),
+								}
+							})
 							.unwrap()
 							.build()
 							.unwrap()
@@ -86,7 +92,7 @@ impl Drawable for SpriteBatch {
 				};
 		}
 
-		command_buffer.end_render_pass().unwrap().build().unwrap()
+		Ok(command_buffer.end_render_pass().unwrap().build().unwrap())
 	}
 }
 

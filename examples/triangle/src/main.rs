@@ -42,6 +42,6 @@ fn main() {
 			break;
 		}
 
-		window.present(&mut [&mut mesh_batch]);
+		window.present(&mut [&mut mesh_batch]).unwrap();
 	}
 }

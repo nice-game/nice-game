@@ -3,6 +3,7 @@ pub use winit::{ Event, WindowEvent, WindowId };
 use { Context, Drawable, ObjectIdRoot, RenderTarget };
 use std::{ collections::HashMap, iter::Iterator, sync::{ Arc, atomic::{ AtomicBool, Ordering } }};
 use vulkano::{
+	OomError,
 	device::{ Device, DeviceExtensions, Queue },
 	format::Format,
 	image::ImageViewAccess,
@@ -128,7 +129,7 @@ impl Window {
 			);
 	}
 
-	pub fn present<'a>(&mut self, drawables: &mut [&'a mut Drawable]) {
+	pub fn present<'a>(&mut self, drawables: &mut [&'a mut Drawable]) -> Result<(), OomError> {
 		if self.resized.swap(false, Ordering::Relaxed) {
 			let dimensions = self.surface.capabilities(self.device.physical_device())
 				.expect("failed to get surface capabilities")
@@ -140,7 +141,7 @@ impl Window {
 					Ok(ret) => ret,
 					Err(SwapchainCreationError::UnsupportedDimensions) => {
 						self.resized.store(true, Ordering::Relaxed);
-						return;
+						return Ok(());
 					},
 					Err(err) => panic!("{:?}", err),
 				};
@@ -155,7 +156,7 @@ impl Window {
 				Ok(val) => val,
 				Err(AcquireError::OutOfDate) => {
 					self.resized.store(true, Ordering::Relaxed);
-					return;
+					return Ok(());
 				},
 				Err(err) => panic!("{:?}", err)
 			};
@@ -168,8 +169,15 @@ impl Window {
 				Box::new(acquire_future)
 			};
 		for drawable in drawables {
-			let commands = drawable.commands(&self.id_root, self.queue.family(), image_num, &self.images[image_num]);
-			future = Box::new(future.then_execute(self.queue.clone(), commands).unwrap());
+			future =
+				Box::new(
+					future
+						.then_execute(
+							self.queue.clone(),
+							drawable.commands(&self.id_root, self.queue.family(), image_num, &self.images[image_num])?
+						)
+						.unwrap()
+				);
 		}
 		let future = future.then_swapchain_present(self.queue.clone(), self.swapchain.clone(), image_num)
 			.then_signal_fence_and_flush();
@@ -178,10 +186,12 @@ impl Window {
 				Ok(future) => Some(Box::new(future)),
 				Err(FlushError::OutOfDate) => {
 					self.resized.store(true, Ordering::Relaxed);
-					return;
+					return Ok(());
 				},
 				Err(err) => panic!(err),
 			};
+
+		Ok(())
 	}
 
 	pub(super) fn device(&self) -> &Arc<Device> {
