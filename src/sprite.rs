@@ -3,7 +3,7 @@ use std::sync::{ Arc, Weak };
 use vulkano::{
 	OomError,
 	buffer::{ BufferUsage, ImmutableBuffer },
-	command_buffer::{ AutoCommandBuffer, AutoCommandBufferBuilder, DynamicState },
+	command_buffer::{ AutoCommandBuffer, AutoCommandBufferBuilder, BuildError, DynamicState },
 	device::{ Device },
 	format::Format,
 	framebuffer::{ Framebuffer, FramebufferAbstract, FramebufferCreationError, RenderPassAbstract, Subpass },
@@ -66,8 +66,7 @@ impl Drawable for SpriteBatch {
 		let dimensions = [framebuffer.width() as f32, framebuffer.height() as f32];
 
 		let mut command_buffer =
-			AutoCommandBufferBuilder::primary_one_time_submit(self.shared.device.clone(), queue_family)
-				.unwrap()
+			AutoCommandBufferBuilder::primary_one_time_submit(self.shared.device.clone(), queue_family)?
 				.begin_render_pass(framebuffer, true, vec![[0.1, 0.1, 0.1, 1.0].into()])
 				.unwrap();
 
@@ -88,7 +87,11 @@ impl Drawable for SpriteBatch {
 				};
 		}
 
-		Ok(command_buffer.end_render_pass().unwrap().build().unwrap())
+		Ok(
+			command_buffer.end_render_pass().unwrap()
+				.build()
+				.map_err(|err| match err { BuildError::OomError(err) => err, err => unreachable!("{}", err) })?
+		)
 	}
 }
 
