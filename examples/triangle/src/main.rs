@@ -20,7 +20,7 @@ fn main() {
 					minor: env!("CARGO_PKG_VERSION_MINOR").parse().unwrap(),
 					patch: env!("CARGO_PKG_VERSION_PATCH").parse().unwrap(),
 				}),
-			),
+			).unwrap(),
 			&mut events,
 			"nIce Game"
 		);
