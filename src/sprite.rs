@@ -47,25 +47,23 @@ impl Drawable for SpriteBatch {
 		let framebuffer = self.framebuffers[image_num].as_ref()
 			.and_then(|(old_image, fb)| {
 				old_image.upgrade().iter().filter(|old_image| Arc::ptr_eq(image, &old_image)).next().map(|_| fb.clone())
-			})
-			.unwrap_or_else(|| {
-				let framebuffer =
-					Arc::new(
-						Framebuffer::start(self.shared.subpass.render_pass().clone())
-							.add(image.clone())
-							.map_err(|err| {
-								match err {
-									FramebufferCreationError::OomError(err) => err,
-									err => unreachable!("{}", err),
-								}
-							})
-							.unwrap()
-							.build()
-							.unwrap()
-					);
-				self.framebuffers[image_num] = Some((Arc::downgrade(image), framebuffer.clone()));
-				framebuffer
 			});
+		let framebuffer =
+			if let Some(framebuffer) = framebuffer {
+				framebuffer
+			} else {
+				Framebuffer::start(self.shared.subpass.render_pass().clone())
+					.add(image.clone())
+					.and_then(|fb| fb.build())
+					.map(|fb| {
+						let fb = Arc::new(fb);
+						self.framebuffers[image_num] = Some((Arc::downgrade(image), fb.clone()));
+						fb
+					})
+					.map_err(|err| {
+						match err { FramebufferCreationError::OomError(err) => err, err => unreachable!("{}", err) }
+					})?
+			};
 
 		let dimensions = [framebuffer.width() as f32, framebuffer.height() as f32];
 
