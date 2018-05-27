@@ -27,7 +27,7 @@ fn main() {
 	let triangle = Triangle::new(&mut window).unwrap();
 
 	let mut mesh_batch =
-		SpriteBatch::new(SpriteBatchShared::new(&SpriteBatchShaders::new(window.device().clone()), window.format()), &window);
+		SpriteBatch::new(SpriteBatchShared::new(&SpriteBatchShaders::new(&window).unwrap(), window.format()), &window);
 	mesh_batch.add_triangle(triangle);
 
 	loop {

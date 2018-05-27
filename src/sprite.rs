@@ -1,6 +1,7 @@
 use { Drawable, ObjectId, ObjectIdRoot, RenderTarget, window::Window };
 use std::sync::{ Arc, Weak };
 use vulkano::{
+	OomError,
 	buffer::{ BufferUsage, ImmutableBuffer },
 	command_buffer::{ AutoCommandBuffer, AutoCommandBufferBuilder, DynamicState },
 	device::{ Device },
@@ -134,12 +135,14 @@ pub struct SpriteBatchShaders {
 	fragment_shader: fs::Shader,
 }
 impl SpriteBatchShaders {
-	pub fn new(device: Arc<Device>) -> Self {
-		Self {
-			device: device.clone(),
-			vertex_shader: vs::Shader::load(device.clone()).expect("failed to load shader module"),
-			fragment_shader: fs::Shader::load(device).expect("failed to load shader module"),
-		}
+	pub fn new(window: &Window) -> Result<Self, OomError> {
+		Ok(
+			Self {
+				device: window.device().clone(),
+				vertex_shader: vs::Shader::load(window.device().clone())?,
+				fragment_shader: fs::Shader::load(window.device().clone())?,
+			}
+		)
 	}
 }
 
