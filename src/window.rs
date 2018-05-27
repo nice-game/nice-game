@@ -117,6 +117,17 @@ impl Window {
 		}
 	}
 
+	pub fn join_future<F: GpuFuture + 'static>(&mut self, other: F) {
+		self.previous_frame_end =
+			Some(
+				if let Some(future) = self.previous_frame_end.take() {
+					Box::new(future.join(other))
+				} else {
+					Box::new(other)
+				}
+			);
+	}
+
 	pub fn present<'a>(&mut self, drawables: &mut [&'a mut Drawable]) {
 		if self.resized.swap(false, Ordering::Relaxed) {
 			let dimensions = self.surface.capabilities(self.device.physical_device())
@@ -124,49 +135,53 @@ impl Window {
 				.current_extent
 				.unwrap_or(self.surface.window().get_inner_size().map(|(x, y)| [x, y]).unwrap());
 
-			let (swapchain, images) = match self.swapchain.recreate_with_dimension(dimensions) {
-				Ok(ret) => ret,
-				Err(SwapchainCreationError::UnsupportedDimensions) => {
-					self.resized.store(true, Ordering::Relaxed);
-					return;
-				},
-				Err(err) => panic!("{:?}", err),
-			};
+			let (swapchain, images) =
+				match self.swapchain.recreate_with_dimension(dimensions) {
+					Ok(ret) => ret,
+					Err(SwapchainCreationError::UnsupportedDimensions) => {
+						self.resized.store(true, Ordering::Relaxed);
+						return;
+					},
+					Err(err) => panic!("{:?}", err),
+				};
 			let images = images.into_iter().map(|x| x as _).collect();
 
 			self.swapchain = swapchain;
 			self.images = images;
 		}
 
-		let (image_num, acquire_future) = match acquire_next_image(self.swapchain.clone(), None) {
-			Ok(val) => val,
-			Err(AcquireError::OutOfDate) => {
-				self.resized.store(true, Ordering::Relaxed);
-				return;
-			},
-			Err(err) => panic!("{:?}", err)
-		};
+		let (image_num, acquire_future) =
+			match acquire_next_image(self.swapchain.clone(), None) {
+				Ok(val) => val,
+				Err(AcquireError::OutOfDate) => {
+					self.resized.store(true, Ordering::Relaxed);
+					return;
+				},
+				Err(err) => panic!("{:?}", err)
+			};
 
-		let mut future = if let Some(mut future) = self.previous_frame_end.take() {
-			future.cleanup_finished();
-			Box::new(future.join(acquire_future)) as Box<GpuFuture>
-		} else {
-			Box::new(acquire_future)
-		};
+		let mut future: Box<GpuFuture> =
+			if let Some(mut future) = self.previous_frame_end.take() {
+				future.cleanup_finished();
+				Box::new(future.join(acquire_future))
+			} else {
+				Box::new(acquire_future)
+			};
 		for drawable in drawables {
 			let commands = drawable.commands(&self.id_root, self.queue.family(), image_num, &self.images[image_num]);
 			future = Box::new(future.then_execute(self.queue.clone(), commands).unwrap());
 		}
 		let future = future.then_swapchain_present(self.queue.clone(), self.swapchain.clone(), image_num)
 			.then_signal_fence_and_flush();
-		self.previous_frame_end = match future {
-			Ok(future) => Some(Box::new(future)),
-			Err(FlushError::OutOfDate) => {
-				self.resized.store(true, Ordering::Relaxed);
-				return;
-			},
-			Err(err) => panic!(err),
-		};
+		self.previous_frame_end =
+			match future {
+				Ok(future) => Some(Box::new(future)),
+				Err(FlushError::OutOfDate) => {
+					self.resized.store(true, Ordering::Relaxed);
+					return;
+				},
+				Err(err) => panic!(err),
+			};
 	}
 
 	pub fn device(&self) -> &Arc<Device> {

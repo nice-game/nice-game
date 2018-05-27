@@ -6,11 +6,11 @@ pub mod window;
 
 pub use vulkano::instance::Version;
 
-use std::{ ptr::NonNull, sync::{ Arc, Weak, atomic::{ AtomicBool, AtomicUsize} } };
+use std::sync::{ Arc, Weak };
 use vulkano::{
 	command_buffer::AutoCommandBuffer,
 	image::ImageViewAccess,
-	instance::{ApplicationInfo, Instance, QueueFamily},
+	instance::{ ApplicationInfo, Instance, QueueFamily },
 };
 
 /// Root struct for this library. Any windows that are created using the same context will share some resources.

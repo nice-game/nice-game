@@ -30,9 +30,12 @@ fn main() {
 			"nIce Game"
 		);
 
+	let (triangle, future) = Triangle::new(window.queue().clone()).unwrap();
+	window.join_future(future);
+
 	let mut mesh_batch =
 		MeshBatch::new(MeshBatchShared::new(&MeshBatchShaders::new(window.device().clone()), window.format()), &window);
-	mesh_batch.add_triangle(Triangle::new(window.queue().clone()).unwrap().0);
+	mesh_batch.add_triangle(triangle);
 
 	loop {
 		let mut done = false;
