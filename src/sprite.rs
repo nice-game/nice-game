@@ -1,4 +1,4 @@
-use nice_game::{ Drawable, ObjectId, ObjectIdRoot, RenderTarget };
+use { Drawable, ObjectId, ObjectIdRoot, RenderTarget };
 use std::sync::{ Arc, Weak };
 use vulkano::{
 	buffer::{ BufferUsage, ImmutableBuffer },
@@ -13,15 +13,15 @@ use vulkano::{
 	sync::NowFuture,
 };
 
-pub struct MeshBatch {
-	shared: Arc<MeshBatchShared>,
+pub struct SpriteBatch {
+	shared: Arc<SpriteBatchShared>,
 	meshes: Vec<Triangle>,
 	framebuffers:
 		Vec<Option<(Weak<ImageViewAccess + Send + Sync + 'static>, Arc<FramebufferAbstract + Send + Sync + 'static>)>>,
 	target_id: ObjectId,
 }
-impl MeshBatch {
-	pub fn new(shared: Arc<MeshBatchShared>, target: &RenderTarget) -> Self {
+impl SpriteBatch {
+	pub fn new(shared: Arc<SpriteBatchShared>, target: &RenderTarget) -> Self {
 		Self {
 			shared: shared,
 			meshes: vec![],
@@ -34,7 +34,7 @@ impl MeshBatch {
 		self.meshes.push(triangle);
 	}
 }
-impl Drawable for MeshBatch {
+impl Drawable for SpriteBatch {
 	fn commands(
 		&mut self,
 		target_id: &ObjectIdRoot,
@@ -90,13 +90,13 @@ impl Drawable for MeshBatch {
 	}
 }
 
-pub struct MeshBatchShared {
+pub struct SpriteBatchShared {
 	device: Arc<Device>,
 	subpass: Subpass<Arc<RenderPassAbstract + Send + Sync>>,
 	pipeline: Arc<GraphicsPipelineAbstract + Send + Sync + 'static>,
 }
-impl MeshBatchShared {
-	pub fn new(shaders: &MeshBatchShaders, format: Format) -> Arc<Self> {
+impl SpriteBatchShared {
+	pub fn new(shaders: &SpriteBatchShaders, format: Format) -> Arc<Self> {
 		let subpass =
 			Subpass::from(
 				Arc::new(
@@ -129,12 +129,12 @@ impl MeshBatchShared {
 	}
 }
 
-pub struct MeshBatchShaders {
+pub struct SpriteBatchShaders {
 	device: Arc<Device>,
 	vertex_shader: vs::Shader,
 	fragment_shader: fs::Shader,
 }
-impl MeshBatchShaders {
+impl SpriteBatchShaders {
 	pub fn new(device: Arc<Device>) -> Self {
 		Self {
 			device: device.clone(),

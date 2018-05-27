@@ -1,16 +1,10 @@
 extern crate nice_game;
-#[macro_use]
-extern crate vulkano;
-#[macro_use]
-extern crate vulkano_shader_derive;
 
-mod mesh;
-
-use mesh::{ MeshBatch, MeshBatchShaders, MeshBatchShared, Triangle };
 use nice_game::{
 	Context,
 	Version,
-	window::{ Event, EventsLoop, Window, WindowEvent }
+	sprite::{ SpriteBatch, SpriteBatchShaders, SpriteBatchShared, Triangle },
+	window::{ Event, EventsLoop, Window, WindowEvent },
 };
 
 fn main() {
@@ -34,7 +28,7 @@ fn main() {
 	window.join_future(future);
 
 	let mut mesh_batch =
-		MeshBatch::new(MeshBatchShared::new(&MeshBatchShaders::new(window.device().clone()), window.format()), &window);
+		SpriteBatch::new(SpriteBatchShared::new(&SpriteBatchShaders::new(window.device().clone()), window.format()), &window);
 	mesh_batch.add_triangle(triangle);
 
 	loop {

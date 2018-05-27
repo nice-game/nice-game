@@ -5,6 +5,7 @@ authors = ["IcyDefiance <icydefiance@gmail.com>"]
 
 [dependencies]
 vulkano = "0.9"
+vulkano-shader-derive = "0.9"
 vulkano-win = "0.9"
 winit = "0.11"
 

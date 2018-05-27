@@ -1,7 +1,11 @@
+#[macro_use]
 extern crate vulkano;
+#[macro_use]
+extern crate vulkano_shader_derive;
 extern crate vulkano_win;
 extern crate winit;
 
+pub mod sprite;
 pub mod window;
 
 pub use vulkano::instance::Version;

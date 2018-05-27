@@ -5,5 +5,3 @@ authors = ["IcyDefiance <icydefiance@gmail.com>"]
 
 [dependencies]
 nice-game = { path = "../../" }
-vulkano = "0.9"
-vulkano-shader-derive = "0.9"
