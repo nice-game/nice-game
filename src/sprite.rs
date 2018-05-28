@@ -173,6 +173,7 @@ pub struct SpriteBatchShaders {
 	white_pixel: Arc<ImmutableImage<R8G8B8A8Srgb>>,
 	vertex_shader: vs::Shader,
 	fragment_shader: fs::Shader,
+	sampler: Arc<Sampler>,
 }
 impl SpriteBatchShaders {
 	pub fn new(window: &mut Window) -> Result<Arc<Self>, DeviceMemoryAllocError> {
@@ -207,6 +208,16 @@ impl SpriteBatchShaders {
 			white_pixel: white_pixel,
 			vertex_shader: vs::Shader::load(window.device().clone())?,
 			fragment_shader: fs::Shader::load(window.device().clone())?,
+			sampler:
+				Sampler::new(
+					window.device().clone(),
+					Filter::Linear,
+					Filter::Linear, MipmapMode::Nearest,
+					SamplerAddressMode::Repeat,
+					SamplerAddressMode::Repeat,
+					SamplerAddressMode::Repeat,
+					0.0, 1.0, 0.0, 0.0
+				).unwrap(),
 		}))
 	}
 }
@@ -221,8 +232,9 @@ impl Sprite {
 	where P: AsRef<Path> + Send + 'static {
 		let state = Arc::new(Atom::new(Box::new(SpriteState::LoadingCpu)));
 
-		let (target_size, future) =
-			ImmutableBuffer::from_data([100.0f32, 100.0f32], BufferUsage::uniform_buffer(), window.queue().clone()).unwrap();
+		let (img_size, future) =
+			ImmutableBuffer::from_data([100.0f32, 100.0f32], BufferUsage::uniform_buffer(), window.queue().clone())
+				.unwrap();
 		window.join_future(Box::new(future));
 
 		{
@@ -239,17 +251,31 @@ impl Sprite {
 							let (width, height) = img.dimensions();
 							let img = img.into_raw();
 
-							let (img, future) =
+							let (img, img_future) =
 								ImmutableImage::from_iter(
 									img.into_iter(),
 									Dimensions::Dim2d { width: width, height: height },
 									R8G8B8A8Srgb,
-									queue,
+									queue.clone(),
 								)
 								.unwrap();
-							let future = future.then_signal_fence_and_flush().unwrap();
 
-							state.swap(Box::new(SpriteState::LoadingGpu(img, future)));
+							let (img_size, size_future) =
+								ImmutableBuffer::from_data(
+									[width as f32, height as f32],
+									BufferUsage::uniform_buffer(),
+									queue
+								).unwrap();
+
+							state.swap(Box::new(
+								SpriteState::LoadingGpu(
+									img,
+									img_size,
+									(Box::new(img_future.join(size_future)) as Box<GpuFuture + Send + Sync + 'static>)
+										.then_signal_fence_and_flush()
+										.unwrap()
+								)
+							));
 
 							Ok(()) as Result<(), ()>
 						})
@@ -265,20 +291,9 @@ impl Sprite {
 			static_desc:
 				Arc::new(
 					PersistentDescriptorSet::start(shared.pipeline.clone(), 2)
-						.add_buffer(target_size.clone())
+						.add_buffer(img_size)
 						.unwrap()
-						.add_sampled_image(
-							shared.shaders.white_pixel.clone(),
-							Sampler::new(
-								window.device().clone(),
-								Filter::Linear,
-								Filter::Linear, MipmapMode::Nearest,
-								SamplerAddressMode::Repeat,
-								SamplerAddressMode::Repeat,
-								SamplerAddressMode::Repeat,
-								0.0, 1.0, 0.0, 0.0
-							).unwrap(),
-						)
+						.add_sampled_image(shared.shaders.white_pixel.clone(), shared.shaders.sampler.clone())
 						.unwrap()
 						.build()
 						.unwrap()
@@ -290,7 +305,7 @@ impl Sprite {
 	}
 
 	fn make_commands(
-		&self,
+		&mut self,
 		shared: &SpriteBatchShared,
 		target_desc: &Arc<DescriptorSet + Send + Sync + 'static>,
 		queue_family: QueueFamily,
@@ -299,8 +314,20 @@ impl Sprite {
 		let state = self.state.take().unwrap();
 		let state =
 			match &*state {
-				SpriteState::LoadingGpu(img, future) => match future.wait(Some(Default::default())) {
-					Ok(()) => Some(Box::new(SpriteState::Loaded(img.clone()))),
+				SpriteState::LoadingGpu(img, img_size, future) => match future.wait(Some(Default::default())) {
+					Ok(()) => {
+						self.static_desc =
+							Arc::new(
+								PersistentDescriptorSet::start(shared.pipeline.clone(), 2)
+									.add_buffer(img_size.clone())
+									.unwrap()
+									.add_sampled_image(img.clone(), shared.shaders.sampler.clone())
+									.unwrap()
+									.build()
+									.unwrap()
+							);
+						Some(Box::new(SpriteState::Loaded(img.clone())))
+					},
 					_ => None
 				},
 				_ => None
@@ -348,7 +375,8 @@ enum SpriteState {
 	LoadingCpu,
 	LoadingGpu(
 		Arc<ImmutableImage<R8G8B8A8Srgb>>,
-		FenceSignalFuture<CommandBufferExecFuture<NowFuture, AutoCommandBuffer>>,
+		Arc<ImmutableBuffer<[f32; 2]>>,
+		FenceSignalFuture<Box<GpuFuture + Send + Sync + 'static>>,
 	),
 	Loaded(Arc<ImmutableImage<R8G8B8A8Srgb>>),
 }
