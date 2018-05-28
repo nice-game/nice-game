@@ -3,11 +3,11 @@ pub use winit::{ Event, WindowEvent, WindowId };
 use { Context, Drawable, ObjectIdRoot, RenderTarget };
 use std::{ collections::HashMap, iter::Iterator, sync::{ Arc, atomic::{ AtomicBool, Ordering } }};
 use vulkano::{
-	OomError,
 	device::{ Device, DeviceExtensions, Queue },
 	format::Format,
 	image::ImageViewAccess,
 	instance::{ Features, PhysicalDevice },
+	memory::DeviceMemoryAllocError,
 	swapchain::{
 		acquire_next_image,
 		AcquireError,
@@ -118,7 +118,7 @@ impl Window {
 		}
 	}
 
-	pub fn present<'a>(&mut self, drawables: &mut [&'a mut Drawable]) -> Result<(), OomError> {
+	pub fn present<'a>(&mut self, drawables: &mut [&'a mut Drawable]) -> Result<(), DeviceMemoryAllocError> {
 		if self.resized.swap(false, Ordering::Relaxed) {
 			let dimensions = self.surface.capabilities(self.device.physical_device())
 				.expect("failed to get surface capabilities")
@@ -163,7 +163,7 @@ impl Window {
 					future
 						.then_execute(
 							self.queue.clone(),
-							drawable.commands(&self.id_root, self.queue.family(), image_num, &self.images[image_num])?
+							drawable.commands(self, image_num)?
 						)
 						.unwrap()
 				);
@@ -200,8 +200,8 @@ impl RenderTarget for Window {
 		&self.id_root
 	}
 
-	fn image_count(&self) -> usize {
-		self.images.len()
+	fn images(&self) -> &[Arc<ImageViewAccess + Send + Sync + 'static>] {
+		&self.images
 	}
 
 	fn join_future(&mut self, other: Box<GpuFuture>) {
@@ -213,5 +213,9 @@ impl RenderTarget for Window {
 					Box::new(other)
 				}
 			);
+	}
+
+	fn queue(&self) -> &Arc<Queue> {
+		&self.queue
 	}
 }

@@ -27,8 +27,8 @@ fn main() {
 
 	let sprite = Sprite::from_file_with_format(&window, "examples/triangle/assets/colors.png", ImageFormat::PNG);
 
-	let mut mesh_batch =
-		SpriteBatch::new(SpriteBatchShared::new(SpriteBatchShaders::new(&mut window).unwrap(), window.format()), &window);
+	let sprite_batch_shared = SpriteBatchShared::new(SpriteBatchShaders::new(&mut window).unwrap(), window.format());
+	let mut mesh_batch = SpriteBatch::new(&mut window, sprite_batch_shared).unwrap();
 	mesh_batch.add_sprite(sprite);
 
 	loop {

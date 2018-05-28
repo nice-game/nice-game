@@ -20,11 +20,12 @@ pub use vulkano::instance::Version;
 use futures_cpupool::CpuPool;
 use std::{ cmp::min, sync::{ Arc, Weak } };
 use vulkano::{
-	OomError,
 	command_buffer::AutoCommandBuffer,
+	device::Queue,
 	format::Format,
 	image::ImageViewAccess,
-	instance::{ ApplicationInfo, Instance, InstanceCreationError, QueueFamily },
+	instance::{ ApplicationInfo, Instance, InstanceCreationError },
+	memory::DeviceMemoryAllocError,
 	sync::GpuFuture,
 };
 
@@ -92,16 +93,15 @@ impl ObjectIdRoot {
 pub trait RenderTarget {
 	fn format(&self) -> Format;
 	fn id_root(&self) -> &ObjectIdRoot;
-	fn image_count(&self) -> usize;
+	fn images(&self) -> &[Arc<ImageViewAccess + Send + Sync + 'static>];
 	fn join_future(&mut self, other: Box<GpuFuture>);
+	fn queue(&self) -> &Arc<Queue>;
 }
 
 pub trait Drawable {
 	fn commands(
 		&mut self,
-		target_id: &ObjectIdRoot,
-		queue_family: QueueFamily,
+		target: &mut RenderTarget,
 		image_num: usize,
-		image: &Arc<ImageViewAccess + Send + Sync + 'static>
-	) -> Result<AutoCommandBuffer, OomError>;
+	) -> Result<AutoCommandBuffer, DeviceMemoryAllocError>;
 }
