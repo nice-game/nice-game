@@ -25,11 +25,13 @@ fn main() {
 			"nIce Game"
 		);
 
-	let sprite = Sprite::from_file_with_format(&window, "examples/triangle/assets/colors.png", ImageFormat::PNG);
 
 	let sprite_batch_shared = SpriteBatchShared::new(SpriteBatchShaders::new(&mut window).unwrap(), window.format());
-	let mut mesh_batch = SpriteBatch::new(&mut window, sprite_batch_shared).unwrap();
-	mesh_batch.add_sprite(sprite);
+
+	let sprite = Sprite::from_file_with_format(&mut window, &sprite_batch_shared, "examples/triangle/assets/colors.png", ImageFormat::PNG);
+
+	let mut sprite_batch = SpriteBatch::new(&mut window, sprite_batch_shared).unwrap();
+	sprite_batch.add_sprite(sprite);
 
 	loop {
 		let mut done = false;
@@ -42,6 +44,6 @@ fn main() {
 			break;
 		}
 
-		window.present(&mut [&mut mesh_batch]).unwrap();
+		window.present(&mut [&mut sprite_batch]).unwrap();
 	}
 }

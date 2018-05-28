@@ -212,12 +212,17 @@ impl SpriteBatchShaders {
 
 pub struct Sprite {
 	state: Arc<Atom<Box<SpriteState>>>,
+	size_desc: Arc<DescriptorSet + Send + Sync + 'static>,
 	position: Arc<ImmutableBuffer<[f32; 2]>>,
 }
 impl Sprite {
-	pub fn from_file_with_format<P>(window: &Window, path: P, format: ImageFormat) -> Self
+	pub fn from_file_with_format<P>(window: &mut Window, shared: &SpriteBatchShared, path: P, format: ImageFormat) -> Self
 	where P: AsRef<Path> + Send + 'static {
 		let state = Arc::new(Atom::new(Box::new(SpriteState::LoadingCpu)));
+
+		let (target_size, future) =
+			ImmutableBuffer::from_data([100.0f32, 100.0f32], BufferUsage::uniform_buffer(), window.queue().clone()).unwrap();
+		window.join_future(Box::new(future));
 
 		{
 			let queue = window.queue().clone();
@@ -256,9 +261,17 @@ impl Sprite {
 
 		Self {
 			state: state,
+			size_desc:
+				Arc::new(
+					PersistentDescriptorSet::start(shared.pipeline.clone(), 2)
+						.add_buffer(target_size.clone())
+						.unwrap()
+						.build()
+						.unwrap()
+				),
 			position: ImmutableBuffer::from_data([10.0, 10.0], BufferUsage::uniform_buffer(), window.queue().clone())
 				.unwrap()
-				.0
+				.0,
 		}
 	}
 
@@ -305,7 +318,8 @@ impl Sprite {
 							.add_buffer(self.position.clone())
 							.unwrap()
 							.build()
-							.unwrap()
+							.unwrap(),
+						self.size_desc.clone(),
 					),
 					()
 				)
@@ -318,7 +332,10 @@ impl Sprite {
 
 enum SpriteState {
 	LoadingCpu,
-	LoadingGpu(Arc<ImmutableImage<R8G8B8A8Srgb>>, FenceSignalFuture<CommandBufferExecFuture<NowFuture, AutoCommandBuffer>>),
+	LoadingGpu(
+		Arc<ImmutableImage<R8G8B8A8Srgb>>,
+		FenceSignalFuture<CommandBufferExecFuture<NowFuture, AutoCommandBuffer>>,
+	),
 	Loaded(Arc<ImmutableImage<R8G8B8A8Srgb>>),
 }
 
@@ -338,12 +355,16 @@ layout(set = 0, binding = 0) uniform Target {
 	vec2 size;
 } target;
 
-layout(set = 1, binding = 0) uniform Sprite {
+layout(set = 1, binding = 0) uniform SpriteDynamic {
 	vec2 pos;
-} sprite;
+} sprite_dynamic;
+
+layout(set = 2, binding = 0) uniform SpriteStatic {
+	vec2 size;
+} sprite_static;
 
 void main() {
-	gl_Position = vec4(sprite.pos / target.size * 2 - 1 + position, 0.0, 1.0);
+	gl_Position = vec4((2 * sprite_dynamic.pos + sprite_static.size * position - target.size) / target.size, 0.0, 1.0);
 }
 "]
 	struct Dummy;
