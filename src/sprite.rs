@@ -24,20 +24,20 @@ pub struct SpriteBatch {
 	framebuffers:
 		Vec<Option<(Weak<ImageViewAccess + Send + Sync + 'static>, Arc<FramebufferAbstract + Send + Sync + 'static>)>>,
 	target_id: ObjectId,
-	target_descs: TargetDescs,
+	target_desc: Arc<DescriptorSet + Send + Sync + 'static>,
 }
 impl SpriteBatch {
 	pub fn new(target: &mut RenderTarget, shared: Arc<SpriteBatchShared>) -> Result<Self, DeviceMemoryAllocError> {
 		let dimensions = target.images()[0].dimensions();
 		let target_descs =
-			Self::make_target_descs(target, &shared, dimensions.width() as f32, dimensions.height() as f32)?;
+			Self::make_target_desc(target, &shared, dimensions.width() as f32, dimensions.height() as f32)?;
 
 		Ok(Self {
 			shared: shared,
 			meshes: vec![],
 			framebuffers: vec![None; target.images().len()],
 			target_id: target.id_root().make_id(),
-			target_descs: target_descs,
+			target_desc: target_descs,
 		})
 	}
 
@@ -45,34 +45,23 @@ impl SpriteBatch {
 		self.meshes.push(sprite);
 	}
 
-	fn make_target_descs(
+	fn make_target_desc(
 		target: &mut RenderTarget,
 		shared: &SpriteBatchShared,
 		width: f32,
 		height: f32
-	) -> Result<TargetDescs, DeviceMemoryAllocError> {
+	) -> Result<Arc<DescriptorSet + Send + Sync + 'static>, DeviceMemoryAllocError> {
 		let (target_size, future) =
 			ImmutableBuffer::from_data([width, height], BufferUsage::uniform_buffer(), target.queue().clone())?;
 		target.join_future(Box::new(future));
 
-		Ok(TargetDescs {
-			color:
-				Arc::new(
-					PersistentDescriptorSet::start(shared.color_pipeline.clone(), 0)
-						.add_buffer(target_size.clone())
-						.unwrap()
-						.build()
-						.unwrap()
-				),
-			image:
-				Arc::new(
-					PersistentDescriptorSet::start(shared.image_pipeline.clone(), 0)
-						.add_buffer(target_size.clone())
-						.unwrap()
-						.build()
-						.unwrap()
-				),
-		})
+		Ok(Arc::new(
+			PersistentDescriptorSet::start(shared.pipeline.clone(), 0)
+				.add_buffer(target_size.clone())
+				.unwrap()
+				.build()
+				.unwrap()
+		))
 	}
 }
 impl Drawable for SpriteBatch {
@@ -104,8 +93,8 @@ impl Drawable for SpriteBatch {
 					})?;
 				self.framebuffers[image_num] = Some((Arc::downgrade(&target.images()[image_num]), framebuffer.clone()));
 
-				self.target_descs =
-					Self::make_target_descs(target, &self.shared, framebuffer.width() as f32, framebuffer.height() as f32)?;
+				self.target_desc =
+					Self::make_target_desc(target, &self.shared, framebuffer.width() as f32, framebuffer.height() as f32)?;
 
 				framebuffer
 			};
@@ -122,7 +111,7 @@ impl Drawable for SpriteBatch {
 				unsafe {
 					command_buffer
 						.execute_commands(
-							mesh.make_commands(&self.shared, &self.target_descs, target.queue().family(), dimensions,)?
+							mesh.make_commands(&self.shared, &self.target_desc, target.queue().family(), dimensions,)?
 						)
 						.unwrap()
 				};
@@ -139,10 +128,8 @@ impl Drawable for SpriteBatch {
 pub struct SpriteBatchShared {
 	shaders: Arc<SpriteBatchShaders>,
 	subpass: Subpass<Arc<RenderPassAbstract + Send + Sync>>,
-	color_pipeline: Arc<GraphicsPipelineAbstract + Send + Sync + 'static>,
-	image_pipeline: Arc<GraphicsPipelineAbstract + Send + Sync + 'static>,
-	color_sprite_desc_pool: Mutex<FixedSizeDescriptorSetsPool<Arc<GraphicsPipelineAbstract + Send + Sync + 'static>>>,
-	image_sprite_desc_pool: Mutex<FixedSizeDescriptorSetsPool<Arc<GraphicsPipelineAbstract + Send + Sync + 'static>>>,
+	pipeline: Arc<GraphicsPipelineAbstract + Send + Sync + 'static>,
+	sprite_desc_pool: Mutex<FixedSizeDescriptorSetsPool<Arc<GraphicsPipelineAbstract + Send + Sync + 'static>>>,
 }
 impl SpriteBatchShared {
 	pub fn new(shaders: Arc<SpriteBatchShaders>, format: Format) -> Arc<Self> {
@@ -158,25 +145,13 @@ impl SpriteBatchShared {
 				0
 			).expect("failed to create subpass");
 
-		let color_pipeline = Arc::new(
+		let pipeline = Arc::new(
 			GraphicsPipeline::start()
 				.vertex_input_single_buffer::<SpriteVertex>()
-				.vertex_shader(shaders.color_vertex_shader.main_entry_point(), ())
+				.vertex_shader(shaders.vertex_shader.main_entry_point(), ())
 				.triangle_list()
 				.viewports_dynamic_scissors_irrelevant(1)
-				.fragment_shader(shaders.color_fragment_shader.main_entry_point(), ())
-				.render_pass(subpass.clone())
-				.build(shaders.device.clone())
-				.expect("failed to create pipeline")
-		);
-
-		let image_pipeline = Arc::new(
-			GraphicsPipeline::start()
-				.vertex_input_single_buffer::<SpriteVertex>()
-				.vertex_shader(shaders.image_vertex_shader.main_entry_point(), ())
-				.triangle_list()
-				.viewports_dynamic_scissors_irrelevant(1)
-				.fragment_shader(shaders.image_fragment_shader.main_entry_point(), ())
+				.fragment_shader(shaders.fragment_shader.main_entry_point(), ())
 				.render_pass(subpass.clone())
 				.build(shaders.device.clone())
 				.expect("failed to create pipeline")
@@ -185,25 +160,22 @@ impl SpriteBatchShared {
 		Arc::new(Self {
 			shaders: shaders,
 			subpass: subpass,
-			color_pipeline: color_pipeline.clone(),
-			image_pipeline: image_pipeline.clone(),
-			color_sprite_desc_pool: Mutex::new(FixedSizeDescriptorSetsPool::new(color_pipeline, 1)),
-			image_sprite_desc_pool: Mutex::new(FixedSizeDescriptorSetsPool::new(image_pipeline, 1)),
+			pipeline: pipeline.clone(),
+			sprite_desc_pool: Mutex::new(FixedSizeDescriptorSetsPool::new(pipeline, 1)),
 		})
 	}
 }
 
 pub struct SpriteBatchShaders {
 	device: Arc<Device>,
-	buffer: Arc<ImmutableBuffer<[SpriteVertex; 6]>>,
-	color_vertex_shader: vs::Shader,
-	color_fragment_shader: fs::Shader,
-	image_vertex_shader: vs::Shader,
-	image_fragment_shader: fs::Shader,
+	vertices: Arc<ImmutableBuffer<[SpriteVertex; 6]>>,
+	white_pixel: Arc<ImmutableImage<R8G8B8A8Srgb>>,
+	vertex_shader: vs::Shader,
+	fragment_shader: fs::Shader,
 }
 impl SpriteBatchShaders {
 	pub fn new(window: &mut Window) -> Result<Arc<Self>, DeviceMemoryAllocError> {
-		let (buffer, future) =
+		let (vertices, vertex_future) =
 			ImmutableBuffer::from_data(
 				[
 					SpriteVertex { position: [0.0, 0.0] },
@@ -217,15 +189,23 @@ impl SpriteBatchShaders {
 				window.queue().clone(),
 			)?;
 
-		window.join_future(Box::new(future));
+		let (white_pixel, white_pixel_future) =
+			ImmutableImage::from_iter(
+				[255, 255, 255, 255].iter().cloned(),
+				Dimensions::Dim2d { width: 1, height: 1 },
+				R8G8B8A8Srgb,
+				window.queue().clone(),
+			)
+			.unwrap();
+
+		window.join_future(Box::new(vertex_future.join(white_pixel_future)));
 
 		Ok(Arc::new(Self {
 			device: window.device().clone(),
-			buffer: buffer,
-			color_vertex_shader: vs::Shader::load(window.device().clone())?,
-			color_fragment_shader: fs::Shader::load(window.device().clone())?,
-			image_vertex_shader: vs::Shader::load(window.device().clone())?,
-			image_fragment_shader: fs::Shader::load(window.device().clone())?,
+			vertices: vertices,
+			white_pixel: white_pixel,
+			vertex_shader: vs::Shader::load(window.device().clone())?,
+			fragment_shader: fs::Shader::load(window.device().clone())?,
 		}))
 	}
 }
@@ -285,7 +265,7 @@ impl Sprite {
 	fn make_commands(
 		&self,
 		shared: &SpriteBatchShared,
-		target_descs: &TargetDescs,
+		target_desc: &Arc<DescriptorSet + Send + Sync + 'static>,
 		queue_family: QueueFamily,
 		dimensions: [f32; 2],
 	) -> Result<AutoCommandBuffer, OomError> {
@@ -300,25 +280,12 @@ impl Sprite {
 			}
 			.map_or(state, |new| new);
 
-		let (pipeline, target_desc, sprite_desc) =
-			if let SpriteState::Loaded(_) = &*state {
-				(shared.image_pipeline.clone(), target_descs.image.clone(), &shared.image_sprite_desc_pool)
-			} else {
-				(shared.color_pipeline.clone(), target_descs.color.clone(), &shared.color_sprite_desc_pool)
-			};
-		let sprite_desc = sprite_desc.lock().unwrap()
-			.next()
-			.add_buffer(self.position.clone())
-			.unwrap()
-			.build()
-			.unwrap();
-
 		self.state.set_if_none(state);
 
 		Ok(
 			AutoCommandBufferBuilder::secondary_graphics_one_time_submit(shared.shaders.device.clone(), queue_family, shared.subpass.clone())?
 				.draw(
-					pipeline,
+					shared.pipeline.clone(),
 					DynamicState {
 						line_width: None,
 						viewports: Some(vec![
@@ -330,7 +297,17 @@ impl Sprite {
 						]),
 						scissors: None,
 					},
-					vec![shared.shaders.buffer.clone()], (target_desc, sprite_desc), ()
+					vec![shared.shaders.vertices.clone()],
+					(
+						target_desc.clone(),
+						shared.sprite_desc_pool.lock().unwrap()
+							.next()
+							.add_buffer(self.position.clone())
+							.unwrap()
+							.build()
+							.unwrap()
+					),
+					()
 				)
 				.unwrap()
 				.build()
@@ -348,11 +325,6 @@ enum SpriteState {
 #[derive(Debug, Clone)]
 struct SpriteVertex { position: [f32; 2] }
 impl_vertex!(SpriteVertex, position);
-
-struct TargetDescs {
-	color: Arc<DescriptorSet + Send + Sync + 'static>,
-	image: Arc<DescriptorSet + Send + Sync + 'static>,
-}
 
 mod vs {
 	#[allow(dead_code)]
