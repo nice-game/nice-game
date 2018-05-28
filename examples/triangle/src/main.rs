@@ -4,7 +4,7 @@ use nice_game::{
 	Context,
 	RenderTarget,
 	Version,
-	sprite::{ SpriteBatch, SpriteBatchShaders, SpriteBatchShared, Triangle },
+	sprite::{ ImageFormat, Sprite, SpriteBatch, SpriteBatchShaders, SpriteBatchShared },
 	window::{ Event, EventsLoop, Window, WindowEvent },
 };
 
@@ -25,11 +25,11 @@ fn main() {
 			"nIce Game"
 		);
 
-	let triangle = Triangle::new(&mut window).unwrap();
+	let sprite = Sprite::from_file_with_format(&window, "examples/triangle/assets/colors.png", ImageFormat::PNG);
 
 	let mut mesh_batch =
-		SpriteBatch::new(SpriteBatchShared::new(&SpriteBatchShaders::new(&window).unwrap(), window.format()), &window);
-	mesh_batch.add_triangle(triangle);
+		SpriteBatch::new(SpriteBatchShared::new(SpriteBatchShaders::new(&mut window).unwrap(), window.format()), &window);
+	mesh_batch.add_sprite(sprite);
 
 	loop {
 		let mut done = false;

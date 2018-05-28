@@ -1,3 +1,10 @@
+extern crate atom;
+extern crate futures;
+extern crate futures_cpupool;
+extern crate image;
+#[macro_use]
+extern crate lazy_static;
+extern crate num_cpus;
 #[macro_use]
 extern crate vulkano;
 #[macro_use]
@@ -10,7 +17,8 @@ pub mod window;
 
 pub use vulkano::instance::Version;
 
-use std::sync::{ Arc, Weak };
+use futures_cpupool::CpuPool;
+use std::{ cmp::min, sync::{ Arc, Weak } };
 use vulkano::{
 	OomError,
 	command_buffer::AutoCommandBuffer,
@@ -18,6 +26,19 @@ use vulkano::{
 	image::ImageViewAccess,
 	instance::{ ApplicationInfo, Instance, InstanceCreationError, QueueFamily },
 };
+
+lazy_static! {
+	static ref CPU_POOL: CpuPool = CpuPool::new(min(1, num_cpus::get() - 1));
+	static ref FS_POOL: CpuPool = CpuPool::new(1);
+}
+
+pub fn cpu_pool() -> &'static CpuPool {
+	&CPU_POOL
+}
+
+pub fn fs_pool() -> &'static CpuPool {
+	&FS_POOL
+}
 
 /// Root struct for this library. Any windows that are created using the same context will share some resources.
 pub struct Context {
