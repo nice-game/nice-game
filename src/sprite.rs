@@ -15,6 +15,7 @@ use vulkano::{
 	instance::QueueFamily,
 	memory::DeviceMemoryAllocError,
 	pipeline::{ GraphicsPipeline, GraphicsPipelineAbstract, viewport::Viewport },
+	sampler::{ Filter, MipmapMode, Sampler, SamplerAddressMode },
 	sync::{ FenceSignalFuture, GpuFuture, NowFuture },
 };
 
@@ -212,7 +213,7 @@ impl SpriteBatchShaders {
 
 pub struct Sprite {
 	state: Arc<Atom<Box<SpriteState>>>,
-	size_desc: Arc<DescriptorSet + Send + Sync + 'static>,
+	static_desc: Arc<DescriptorSet + Send + Sync + 'static>,
 	position: Arc<ImmutableBuffer<[f32; 2]>>,
 }
 impl Sprite {
@@ -261,10 +262,23 @@ impl Sprite {
 
 		Self {
 			state: state,
-			size_desc:
+			static_desc:
 				Arc::new(
 					PersistentDescriptorSet::start(shared.pipeline.clone(), 2)
 						.add_buffer(target_size.clone())
+						.unwrap()
+						.add_sampled_image(
+							shared.shaders.white_pixel.clone(),
+							Sampler::new(
+								window.device().clone(),
+								Filter::Linear,
+								Filter::Linear, MipmapMode::Nearest,
+								SamplerAddressMode::Repeat,
+								SamplerAddressMode::Repeat,
+								SamplerAddressMode::Repeat,
+								0.0, 1.0, 0.0, 0.0
+							).unwrap(),
+						)
 						.unwrap()
 						.build()
 						.unwrap()
@@ -319,7 +333,7 @@ impl Sprite {
 							.unwrap()
 							.build()
 							.unwrap(),
-						self.size_desc.clone(),
+						self.static_desc.clone(),
 					),
 					()
 				)
@@ -350,6 +364,7 @@ mod vs {
 	#[src = "#version 450
 
 layout(location = 0) in vec2 position;
+layout(location = 0) out vec2 tex_coords;
 
 layout(set = 0, binding = 0) uniform Target {
 	vec2 size;
@@ -364,6 +379,7 @@ layout(set = 2, binding = 0) uniform SpriteStatic {
 } sprite_static;
 
 void main() {
+	tex_coords = position;
 	gl_Position = vec4((2 * sprite_dynamic.pos + sprite_static.size * position - target.size) / target.size, 0.0, 1.0);
 }
 "]
@@ -374,11 +390,15 @@ mod fs {
 	#[allow(dead_code)]
 	#[derive(VulkanoShader)]
 	#[ty = "fragment"]
-	#[src = "
-#version 450
+	#[src = "#version 450
+
+layout(location = 0) in vec2 tex_coords;
 layout(location = 0) out vec4 f_color;
+
+layout(set = 2, binding = 1) uniform sampler2D tex;
+
 void main() {
-	f_color = vec4(1.0, 0.0, 0.0, 1.0);
+	f_color = texture(tex, tex_coords);
 }
 "]
 	struct Dummy;
