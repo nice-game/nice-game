@@ -25,6 +25,7 @@ use vulkano::{
 	format::Format,
 	image::ImageViewAccess,
 	instance::{ ApplicationInfo, Instance, InstanceCreationError, QueueFamily },
+	sync::GpuFuture,
 };
 
 lazy_static! {
@@ -92,6 +93,7 @@ pub trait RenderTarget {
 	fn format(&self) -> Format;
 	fn id_root(&self) -> &ObjectIdRoot;
 	fn image_count(&self) -> usize;
+	fn join_future(&mut self, other: Box<GpuFuture>);
 }
 
 pub trait Drawable {

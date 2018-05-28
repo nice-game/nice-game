@@ -174,7 +174,7 @@ impl SpriteBatchShaders {
 				window.queue().clone(),
 			)?;
 
-		window.join_future(future);
+		window.join_future(Box::new(future));
 
 		Ok(Arc::new(Self {
 			device: window.device().clone(),

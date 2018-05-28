@@ -118,17 +118,6 @@ impl Window {
 		}
 	}
 
-	pub fn join_future<F: GpuFuture + 'static>(&mut self, other: F) {
-		self.previous_frame_end =
-			Some(
-				if let Some(future) = self.previous_frame_end.take() {
-					Box::new(future.join(other))
-				} else {
-					Box::new(other)
-				}
-			);
-	}
-
 	pub fn present<'a>(&mut self, drawables: &mut [&'a mut Drawable]) -> Result<(), OomError> {
 		if self.resized.swap(false, Ordering::Relaxed) {
 			let dimensions = self.surface.capabilities(self.device.physical_device())
@@ -213,5 +202,16 @@ impl RenderTarget for Window {
 
 	fn image_count(&self) -> usize {
 		self.images.len()
+	}
+
+	fn join_future(&mut self, other: Box<GpuFuture>) {
+		self.previous_frame_end =
+			Some(
+				if let Some(future) = self.previous_frame_end.take() {
+					Box::new(future.join(other))
+				} else {
+					Box::new(other)
+				}
+			);
 	}
 }
