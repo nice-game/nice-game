@@ -321,10 +321,10 @@ impl Sprite {
 							Ok(SpriteGpuData {
 								image: img,
 								future: img_future.then_signal_fence_and_flush().unwrap(),
-							}) as Result<SpriteGpuData, ()>
+							})
 						});
 
-					Ok(future) as Result<CpuFuture<SpriteGpuData, ()>, ()>
+					Ok(future)
 				})
 		};
 
