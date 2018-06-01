@@ -383,7 +383,7 @@ layout(set = 2, binding = 0) uniform sampler2D tex;
 
 void main() {
 	tex_coords = position;
-	gl_Position = vec4((2 * sprite_dynamic.pos + textureSize(tex, 0) * position - target.size) / target.size, 0.0, 1.0);
+	gl_Position = vec4(2 * (sprite_dynamic.pos + textureSize(tex, 0) * position) / target.size - 1, 0.0, 1.0);
 }
 "]
 	struct Dummy;
