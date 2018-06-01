@@ -1,5 +1,7 @@
+extern crate futures;
 extern crate nice_game;
 
+use futures::executor::LocalPool;
 use nice_game::{
 	Context,
 	RenderTarget,
@@ -25,10 +27,12 @@ fn main() {
 			"nIce Game"
 		);
 
-
 	let sprite_batch_shared = SpriteBatchShared::new(SpriteBatchShaders::new(&mut window).unwrap(), window.format());
 
-	let sprite = Sprite::from_file_with_format(&mut window, &sprite_batch_shared, "examples/triangle/assets/colors.png", ImageFormat::PNG);
+	let mut pool = LocalPool::new();
+	let mut exec = pool.executor();
+	let sprite_future = Sprite::from_file_with_format(&mut window, sprite_batch_shared.clone(), "examples/triangle/assets/colors.png", ImageFormat::PNG);
+	let sprite = pool.run_until(sprite_future, &mut exec).unwrap();
 
 	let mut sprite_batch = SpriteBatch::new(&mut window, sprite_batch_shared).unwrap();
 	sprite_batch.add_sprite(sprite);

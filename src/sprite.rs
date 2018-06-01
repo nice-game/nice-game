@@ -1,14 +1,14 @@
 pub use image::ImageFormat;
 use { CPU_POOL, FS_POOL, Drawable, ObjectId, RenderTarget, window::Window };
-use atom::Atom;
+use futures::{ Future, Never, Poll, channel::oneshot, executor::Executor, future::lazy, prelude::*, task::Context };
 use image;
-use std::{ fs::File, io::prelude::*, path::Path, sync::{ Arc, Mutex, Weak } };
+use std::{ fmt, fs::File, io::prelude::*, path::Path, sync::{ Arc, Mutex, Weak } };
 use vulkano::{
 	OomError,
 	buffer::{ BufferUsage, ImmutableBuffer },
 	command_buffer::{ AutoCommandBuffer, AutoCommandBufferBuilder, BuildError, CommandBufferExecFuture, DynamicState },
 	descriptor::{ DescriptorSet, descriptor_set::{ FixedSizeDescriptorSetsPool, PersistentDescriptorSet } },
-	device::Device,
+	device::{ Device, Queue },
 	format::{ Format, R8G8B8A8Srgb },
 	framebuffer::{ Framebuffer, FramebufferAbstract, FramebufferCreationError, RenderPassAbstract, Subpass },
 	image::{ Dimensions, ImageViewAccess, immutable::ImmutableImage },
@@ -16,7 +16,7 @@ use vulkano::{
 	memory::DeviceMemoryAllocError,
 	pipeline::{ GraphicsPipeline, GraphicsPipelineAbstract, viewport::Viewport },
 	sampler::{ Filter, MipmapMode, Sampler, SamplerAddressMode },
-	sync::{ FenceSignalFuture, GpuFuture, NowFuture },
+	sync::{ FenceSignalFuture, FlushError, GpuFuture, NowFuture },
 };
 
 pub struct SpriteBatch {
@@ -170,7 +170,6 @@ impl SpriteBatchShared {
 pub struct SpriteBatchShaders {
 	device: Arc<Device>,
 	vertices: Arc<ImmutableBuffer<[SpriteVertex; 6]>>,
-	white_pixel: Arc<ImmutableImage<R8G8B8A8Srgb>>,
 	vertex_shader: vs::Shader,
 	fragment_shader: fs::Shader,
 	sampler: Arc<Sampler>,
@@ -190,22 +189,11 @@ impl SpriteBatchShaders {
 				BufferUsage::vertex_buffer(),
 				window.queue().clone(),
 			)?;
-
-		let (white_pixel, white_pixel_future) =
-			ImmutableImage::from_iter(
-				[255, 255, 255, 255].iter().cloned(),
-				Dimensions::Dim2d { width: 1, height: 1 },
-				R8G8B8A8Srgb,
-				window.queue().clone(),
-			)
-			.unwrap();
-
-		window.join_future(Box::new(vertex_future.join(white_pixel_future)));
+		window.join_future(Box::new(vertex_future));
 
 		Ok(Arc::new(Self {
 			device: window.device().clone(),
 			vertices: vertices,
-			white_pixel: white_pixel,
 			vertex_shader: vs::Shader::load(window.device().clone())?,
 			fragment_shader: fs::Shader::load(window.device().clone())?,
 			sampler:
@@ -222,26 +210,89 @@ impl SpriteBatchShaders {
 	}
 }
 
+pub struct SpriteFuture {
+	state: SpriteState,
+	shared: Arc<SpriteBatchShared>,
+	queue: Arc<Queue>,
+}
+impl Future for SpriteFuture {
+	type Item = Sprite;
+	type Error = oneshot::Canceled;
+
+	fn poll(&mut self, cx: &mut Context) -> Poll<Self::Item, Self::Error> {
+		let mut new_state = None;
+
+		match &mut self.state {
+			SpriteState::LoadingCpu(recv) => match recv.poll(cx)? {
+				Async::Ready(data) => new_state = Some(SpriteState::LoadingGpu(data)),
+				Async::Pending => return Ok(Async::Pending),
+			},
+			_ => (),
+		}
+
+		if let Some(new_state) = new_state {
+			self.state = new_state;
+		}
+
+		match &self.state {
+			SpriteState::LoadingGpu(data) => match data.future.wait(Some(Default::default())) {
+				Ok(()) => Ok(Async::Ready(Sprite {
+					static_desc:
+						Arc::new(
+							PersistentDescriptorSet::start(self.shared.pipeline.clone(), 2)
+								.add_sampled_image(data.image.clone(), self.shared.shaders.sampler.clone())
+								.unwrap()
+								.build()
+								.unwrap()
+						),
+					position: ImmutableBuffer::from_data([10.0, 10.0], BufferUsage::uniform_buffer(), self.queue.clone())
+						.unwrap()
+						.0,
+				})),
+				Err(FlushError::Timeout) => {
+					cx.waker().wake();
+					Ok(Async::Pending)
+				},
+				Err(err) => panic!("{}", err),
+			},
+			_ => unreachable!(),
+		}
+	}
+}
+
+enum SpriteState {
+	LoadingCpu(oneshot::Receiver<SpriteGpuData>),
+	LoadingGpu(SpriteGpuData),
+}
+
+struct SpriteGpuData {
+	image: Arc<ImmutableImage<R8G8B8A8Srgb>>,
+	future: FenceSignalFuture<CommandBufferExecFuture<NowFuture, AutoCommandBuffer>>,
+}
+impl fmt::Debug for SpriteGpuData {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		write!(f, "SpriteGpuData")
+	}
+}
+
 pub struct Sprite {
-	state: Arc<Atom<Box<SpriteState>>>,
 	static_desc: Arc<DescriptorSet + Send + Sync + 'static>,
 	position: Arc<ImmutableBuffer<[f32; 2]>>,
 }
 impl Sprite {
-	pub fn from_file_with_format<P>(window: &mut Window, shared: &SpriteBatchShared, path: P, format: ImageFormat) -> Self
+	pub fn from_file_with_format<P>(window: &mut Window, shared: Arc<SpriteBatchShared>, path: P, format: ImageFormat) -> SpriteFuture
 	where P: AsRef<Path> + Send + 'static {
-		let state = Arc::new(Atom::new(Box::new(SpriteState::LoadingCpu)));
+		let (send, recv) = oneshot::channel();
 
 		{
 			let queue = window.queue().clone();
-			let state = state.clone();
-			FS_POOL
-				.spawn_fn(move || {
+			FS_POOL.lock().unwrap()
+				.spawn(Box::new(lazy(move |_| {
 					let mut bytes = vec![];
 					File::open(path).unwrap().read_to_end(&mut bytes).unwrap();
 
-					CPU_POOL
-						.spawn_fn(move || {
+					CPU_POOL.lock().unwrap()
+						.spawn(Box::new(lazy(move |_| {
 							let img = image::load_from_memory_with_format(&bytes, format).unwrap().to_rgba();
 							let (width, height) = img.dimensions();
 							let img = img.into_raw();
@@ -255,33 +306,23 @@ impl Sprite {
 								)
 								.unwrap();
 
-							state.swap(Box::new(
-								SpriteState::LoadingGpu(img, img_future.then_signal_fence_and_flush().unwrap())
-							));
+							send
+								.send(SpriteGpuData {
+									image: img,
+									future: img_future.then_signal_fence_and_flush().unwrap(),
+								})
+								.unwrap();
 
-							Ok(()) as Result<(), ()>
-						})
-						.forget();
+							Ok(()) as Result<(), Never>
+						})))
+						.unwrap();
 
-					Ok(()) as Result<(), ()>
-				})
-				.forget();
+					Ok(()) as Result<(), Never>
+				})))
+				.unwrap();
 		}
 
-		Self {
-			state: state,
-			static_desc:
-				Arc::new(
-					PersistentDescriptorSet::start(shared.pipeline.clone(), 2)
-						.add_sampled_image(shared.shaders.white_pixel.clone(), shared.shaders.sampler.clone())
-						.unwrap()
-						.build()
-						.unwrap()
-				),
-			position: ImmutableBuffer::from_data([10.0, 10.0], BufferUsage::uniform_buffer(), window.queue().clone())
-				.unwrap()
-				.0,
-		}
+		SpriteFuture { state: SpriteState::LoadingCpu(recv), shared: shared, queue: window.queue().clone() }
 	}
 
 	fn make_commands(
@@ -291,29 +332,6 @@ impl Sprite {
 		queue_family: QueueFamily,
 		dimensions: [f32; 2],
 	) -> Result<AutoCommandBuffer, OomError> {
-		let state = self.state.take().unwrap();
-		let state =
-			match &*state {
-				SpriteState::LoadingGpu(img, future) => match future.wait(Some(Default::default())) {
-					Ok(()) => {
-						self.static_desc =
-							Arc::new(
-								PersistentDescriptorSet::start(shared.pipeline.clone(), 2)
-									.add_sampled_image(img.clone(), shared.shaders.sampler.clone())
-									.unwrap()
-									.build()
-									.unwrap()
-							);
-						Some(Box::new(SpriteState::Loaded(img.clone())))
-					},
-					_ => None
-				},
-				_ => None
-			}
-			.map_or(state, |new| new);
-
-		self.state.set_if_none(state);
-
 		Ok(
 			AutoCommandBufferBuilder::secondary_graphics_one_time_submit(shared.shaders.device.clone(), queue_family, shared.subpass.clone())?
 				.draw(
@@ -347,15 +365,6 @@ impl Sprite {
 				.map_err(|err| match err { BuildError::OomError(err) => err, err => unreachable!("{}", err) })?
 		)
 	}
-}
-
-enum SpriteState {
-	LoadingCpu,
-	LoadingGpu(
-		Arc<ImmutableImage<R8G8B8A8Srgb>>,
-		FenceSignalFuture<CommandBufferExecFuture<NowFuture, AutoCommandBuffer>>,
-	),
-	Loaded(Arc<ImmutableImage<R8G8B8A8Srgb>>),
 }
 
 #[derive(Debug, Clone)]

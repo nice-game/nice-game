@@ -1,6 +1,5 @@
 extern crate atom;
 extern crate futures;
-extern crate futures_cpupool;
 extern crate image;
 #[macro_use]
 extern crate lazy_static;
@@ -17,8 +16,8 @@ pub mod window;
 
 pub use vulkano::instance::Version;
 
-use futures_cpupool::CpuPool;
-use std::{ cmp::min, sync::{ Arc, Weak } };
+use futures::executor::ThreadPool;
+use std::{ cmp::min, sync::{ Arc, Mutex, Weak } };
 use vulkano::{
 	command_buffer::AutoCommandBuffer,
 	device::Queue,
@@ -30,15 +29,15 @@ use vulkano::{
 };
 
 lazy_static! {
-	static ref CPU_POOL: CpuPool = CpuPool::new(min(1, num_cpus::get() - 1));
-	static ref FS_POOL: CpuPool = CpuPool::new(1);
+	static ref CPU_POOL: Mutex<ThreadPool> = Mutex::new(ThreadPool::builder().pool_size(min(1, num_cpus::get() - 1)).create().unwrap());
+	static ref FS_POOL: Mutex<ThreadPool> = Mutex::new(ThreadPool::builder().pool_size(1).create().unwrap());
 }
 
-pub fn cpu_pool() -> &'static CpuPool {
+pub fn cpu_pool() -> &'static Mutex<ThreadPool> {
 	&CPU_POOL
 }
 
-pub fn fs_pool() -> &'static CpuPool {
+pub fn fs_pool() -> &'static Mutex<ThreadPool> {
 	&FS_POOL
 }
 
