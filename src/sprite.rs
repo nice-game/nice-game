@@ -232,11 +232,6 @@ impl Sprite {
 	where P: AsRef<Path> + Send + 'static {
 		let state = Arc::new(Atom::new(Box::new(SpriteState::LoadingCpu)));
 
-		let (img_size, future) =
-			ImmutableBuffer::from_data([100.0f32, 100.0f32], BufferUsage::uniform_buffer(), window.queue().clone())
-				.unwrap();
-		window.join_future(Box::new(future));
-
 		{
 			let queue = window.queue().clone();
 			let state = state.clone();
@@ -260,21 +255,8 @@ impl Sprite {
 								)
 								.unwrap();
 
-							let (img_size, size_future) =
-								ImmutableBuffer::from_data(
-									[width as f32, height as f32],
-									BufferUsage::uniform_buffer(),
-									queue
-								).unwrap();
-
 							state.swap(Box::new(
-								SpriteState::LoadingGpu(
-									img,
-									img_size,
-									(Box::new(img_future.join(size_future)) as Box<GpuFuture + Send + Sync + 'static>)
-										.then_signal_fence_and_flush()
-										.unwrap()
-								)
+								SpriteState::LoadingGpu(img, img_future.then_signal_fence_and_flush().unwrap())
 							));
 
 							Ok(()) as Result<(), ()>
@@ -291,8 +273,6 @@ impl Sprite {
 			static_desc:
 				Arc::new(
 					PersistentDescriptorSet::start(shared.pipeline.clone(), 2)
-						.add_buffer(img_size)
-						.unwrap()
 						.add_sampled_image(shared.shaders.white_pixel.clone(), shared.shaders.sampler.clone())
 						.unwrap()
 						.build()
@@ -314,13 +294,11 @@ impl Sprite {
 		let state = self.state.take().unwrap();
 		let state =
 			match &*state {
-				SpriteState::LoadingGpu(img, img_size, future) => match future.wait(Some(Default::default())) {
+				SpriteState::LoadingGpu(img, future) => match future.wait(Some(Default::default())) {
 					Ok(()) => {
 						self.static_desc =
 							Arc::new(
 								PersistentDescriptorSet::start(shared.pipeline.clone(), 2)
-									.add_buffer(img_size.clone())
-									.unwrap()
 									.add_sampled_image(img.clone(), shared.shaders.sampler.clone())
 									.unwrap()
 									.build()
@@ -375,8 +353,7 @@ enum SpriteState {
 	LoadingCpu,
 	LoadingGpu(
 		Arc<ImmutableImage<R8G8B8A8Srgb>>,
-		Arc<ImmutableBuffer<[f32; 2]>>,
-		FenceSignalFuture<Box<GpuFuture + Send + Sync + 'static>>,
+		FenceSignalFuture<CommandBufferExecFuture<NowFuture, AutoCommandBuffer>>,
 	),
 	Loaded(Arc<ImmutableImage<R8G8B8A8Srgb>>),
 }
@@ -402,13 +379,11 @@ layout(set = 1, binding = 0) uniform SpriteDynamic {
 	vec2 pos;
 } sprite_dynamic;
 
-layout(set = 2, binding = 0) uniform SpriteStatic {
-	vec2 size;
-} sprite_static;
+layout(set = 2, binding = 0) uniform sampler2D tex;
 
 void main() {
 	tex_coords = position;
-	gl_Position = vec4((2 * sprite_dynamic.pos + sprite_static.size * position - target.size) / target.size, 0.0, 1.0);
+	gl_Position = vec4((2 * sprite_dynamic.pos + textureSize(tex, 0) * position - target.size) / target.size, 0.0, 1.0);
 }
 "]
 	struct Dummy;
@@ -423,7 +398,7 @@ mod fs {
 layout(location = 0) in vec2 tex_coords;
 layout(location = 0) out vec4 f_color;
 
-layout(set = 2, binding = 1) uniform sampler2D tex;
+layout(set = 2, binding = 0) uniform sampler2D tex;
 
 void main() {
 	f_color = texture(tex, tex_coords);
