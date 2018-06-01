@@ -11,12 +11,13 @@ extern crate vulkano_shader_derive;
 extern crate vulkano_win;
 extern crate winit;
 
+pub mod cpu_pool;
 pub mod sprite;
 pub mod window;
 
 pub use vulkano::instance::Version;
 
-use futures::executor::ThreadPool;
+use cpu_pool::CpuPool;
 use std::{ cmp::min, sync::{ Arc, Mutex, Weak } };
 use vulkano::{
 	command_buffer::AutoCommandBuffer,
@@ -29,15 +30,15 @@ use vulkano::{
 };
 
 lazy_static! {
-	static ref CPU_POOL: Mutex<ThreadPool> = Mutex::new(ThreadPool::builder().pool_size(min(1, num_cpus::get() - 1)).create().unwrap());
-	static ref FS_POOL: Mutex<ThreadPool> = Mutex::new(ThreadPool::builder().pool_size(1).create().unwrap());
+	static ref CPU_POOL: Mutex<CpuPool> = Mutex::new(CpuPool::new(min(1, num_cpus::get() - 1)));
+	static ref FS_POOL: Mutex<CpuPool> = Mutex::new(CpuPool::new(1));
 }
 
-pub fn cpu_pool() -> &'static Mutex<ThreadPool> {
+pub fn cpu_pool() -> &'static Mutex<CpuPool> {
 	&CPU_POOL
 }
 
-pub fn fs_pool() -> &'static Mutex<ThreadPool> {
+pub fn fs_pool() -> &'static Mutex<CpuPool> {
 	&FS_POOL
 }
 

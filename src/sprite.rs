@@ -1,5 +1,6 @@
 pub use image::ImageFormat;
 use { CPU_POOL, FS_POOL, Drawable, ObjectId, RenderTarget, window::Window };
+use cpu_pool::CpuFuture;
 use futures::{ Future, Never, Poll, channel::oneshot, executor::Executor, future::lazy, prelude::*, task::Context };
 use image;
 use std::{ fmt, fs::File, io::prelude::*, path::Path, sync::{ Arc, Mutex, Weak } };
@@ -217,20 +218,32 @@ pub struct SpriteFuture {
 }
 impl Future for SpriteFuture {
 	type Item = Sprite;
-	type Error = oneshot::Canceled;
+	type Error = ();
 
 	fn poll(&mut self, cx: &mut Context) -> Poll<Self::Item, Self::Error> {
 		let mut new_state = None;
 
 		match &mut self.state {
-			SpriteState::LoadingCpu(recv) => match recv.poll(cx)? {
+			SpriteState::LoadingDisk(future) => match future.poll(cx)? {
+				Async::Ready(subfuture) => new_state = Some(SpriteState::LoadingCpu(subfuture)),
+				Async::Pending => return Ok(Async::Pending),
+			},
+			_ => (),
+		}
+
+		if let Some(new_state) = new_state.take() {
+			self.state = new_state;
+		}
+
+		match &mut self.state {
+			SpriteState::LoadingCpu(future) => match future.poll(cx)? {
 				Async::Ready(data) => new_state = Some(SpriteState::LoadingGpu(data)),
 				Async::Pending => return Ok(Async::Pending),
 			},
 			_ => (),
 		}
 
-		if let Some(new_state) = new_state {
+		if let Some(new_state) = new_state.take() {
 			self.state = new_state;
 		}
 
@@ -261,7 +274,8 @@ impl Future for SpriteFuture {
 }
 
 enum SpriteState {
-	LoadingCpu(oneshot::Receiver<SpriteGpuData>),
+	LoadingDisk(CpuFuture<CpuFuture<SpriteGpuData, ()>, ()>),
+	LoadingCpu(CpuFuture<SpriteGpuData, ()>),
 	LoadingGpu(SpriteGpuData),
 }
 
@@ -282,17 +296,15 @@ pub struct Sprite {
 impl Sprite {
 	pub fn from_file_with_format<P>(window: &mut Window, shared: Arc<SpriteBatchShared>, path: P, format: ImageFormat) -> SpriteFuture
 	where P: AsRef<Path> + Send + 'static {
-		let (send, recv) = oneshot::channel();
-
-		{
+		let future = {
 			let queue = window.queue().clone();
 			FS_POOL.lock().unwrap()
-				.spawn(Box::new(lazy(move |_| {
+				.dispatch(move |_| {
 					let mut bytes = vec![];
 					File::open(path).unwrap().read_to_end(&mut bytes).unwrap();
 
-					CPU_POOL.lock().unwrap()
-						.spawn(Box::new(lazy(move |_| {
+					let future = CPU_POOL.lock().unwrap()
+						.dispatch(move |_| {
 							let img = image::load_from_memory_with_format(&bytes, format).unwrap().to_rgba();
 							let (width, height) = img.dimensions();
 							let img = img.into_raw();
@@ -306,23 +318,17 @@ impl Sprite {
 								)
 								.unwrap();
 
-							send
-								.send(SpriteGpuData {
-									image: img,
-									future: img_future.then_signal_fence_and_flush().unwrap(),
-								})
-								.unwrap();
+							Ok(SpriteGpuData {
+								image: img,
+								future: img_future.then_signal_fence_and_flush().unwrap(),
+							}) as Result<SpriteGpuData, ()>
+						});
 
-							Ok(()) as Result<(), Never>
-						})))
-						.unwrap();
+					Ok(future) as Result<CpuFuture<SpriteGpuData, ()>, ()>
+				})
+		};
 
-					Ok(()) as Result<(), Never>
-				})))
-				.unwrap();
-		}
-
-		SpriteFuture { state: SpriteState::LoadingCpu(recv), shared: shared, queue: window.queue().clone() }
+		SpriteFuture { state: SpriteState::LoadingDisk(future), shared: shared, queue: window.queue().clone() }
 	}
 
 	fn make_commands(
