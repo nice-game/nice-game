@@ -238,13 +238,12 @@ pub struct Sprite {
 	position: Arc<ImmutableBuffer<[f32; 2]>>,
 }
 impl Sprite {
-	pub fn new(target: &mut RenderTarget, shared: &SpriteBatchShared, texture: &Texture, position: [f32; 2]) -> Self {
+	pub fn new(target: &mut RenderTarget, shared: &SpriteBatchShared, texture: &Texture, position: [f32; 2]) -> Result<Self, DeviceMemoryAllocError> {
 		let (position, future) =
-			ImmutableBuffer::from_data(position, BufferUsage::uniform_buffer(), target.queue().clone())
-				.unwrap();
+			ImmutableBuffer::from_data(position, BufferUsage::uniform_buffer(), target.queue().clone())?;
 		target.join_future(Box::new(future));
 
-		Self {
+		Ok(Self {
 			static_desc:
 				Arc::new(
 					PersistentDescriptorSet::start(shared.pipeline.clone(), 2)
@@ -254,7 +253,7 @@ impl Sprite {
 						.unwrap()
 				),
 			position: position
-		}
+		})
 	}
 
 	fn make_commands(
