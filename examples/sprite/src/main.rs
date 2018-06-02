@@ -38,7 +38,7 @@ fn main() {
 				ImageFormat::PNG
 			)
 		).unwrap();
-	let sprite = Sprite::new(&mut window, &sprite_batch_shared, &texture, [10.0, 10.0]);
+	let sprite = Sprite::new(&mut window, &sprite_batch_shared, &texture, [10.0, 10.0]).unwrap();
 
 	let mut sprite_batch = SpriteBatch::new(&mut window, sprite_batch_shared).unwrap();
 	sprite_batch.add_sprite(sprite);

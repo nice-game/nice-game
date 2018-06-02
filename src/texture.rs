@@ -9,7 +9,7 @@ use vulkano::{
 	command_buffer::{ AutoCommandBuffer, CommandBufferExecFuture },
 	device::Queue,
 	format::R8G8B8A8Srgb,
-	image::{ Dimensions, ImageCreationError, immutable::ImmutableImage },
+	image::{ Dimensions, ImageCreationError, ImmutableImage },
 	memory::DeviceMemoryAllocError,
 	sync::{ FenceSignalFuture, FlushError, GpuFuture, NowFuture },
 };
