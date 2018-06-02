@@ -106,6 +106,7 @@ impl Future for TextureFuture {
 					cx.waker().wake();
 					Ok(Async::Pending)
 				},
+				Err(FlushError::DeviceLost) => Err(TextureError::DeviceLost),
 				Err(err) => panic!("{}", err),
 			},
 			_ => unreachable!(),
@@ -117,6 +118,7 @@ impl Future for TextureFuture {
 pub enum TextureError {
 	IoError(io::Error),
 	ImageError(ImageError),
+	DeviceLost,
 	DeviceMemoryAllocError(DeviceMemoryAllocError),
 	OomError(OomError),
 }
