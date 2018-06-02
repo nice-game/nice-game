@@ -113,6 +113,7 @@ impl Future for TextureFuture {
 	}
 }
 
+#[derive(Debug)]
 pub enum TextureError {
 	IoError(io::Error),
 	ImageError(ImageError),
