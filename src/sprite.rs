@@ -13,7 +13,7 @@ use vulkano::{
 	instance::QueueFamily,
 	memory::DeviceMemoryAllocError,
 	pipeline::{ GraphicsPipeline, GraphicsPipelineAbstract, viewport::Viewport },
-	sampler::{ Filter, MipmapMode, Sampler, SamplerAddressMode },
+	sampler::{ Filter, MipmapMode, Sampler, SamplerAddressMode, SamplerCreationError },
 };
 
 pub struct SpriteBatch {
@@ -172,7 +172,7 @@ pub struct SpriteBatchShaders {
 	sampler: Arc<Sampler>,
 }
 impl SpriteBatchShaders {
-	pub fn new(window: &mut Window) -> Result<Arc<Self>, DeviceMemoryAllocError> {
+	pub fn new(window: &mut Window) -> Result<Arc<Self>, SpriteBatchShadersError> {
 		let (vertices, vertex_future) =
 			ImmutableBuffer::from_data(
 				[
@@ -202,8 +202,34 @@ impl SpriteBatchShaders {
 					SamplerAddressMode::Repeat,
 					SamplerAddressMode::Repeat,
 					0.0, 1.0, 0.0, 0.0
-				).unwrap(),
+				)?,
 		}))
+	}
+}
+
+#[derive(Debug)]
+pub enum SpriteBatchShadersError {
+	DeviceMemoryAllocError(DeviceMemoryAllocError),
+	OomError(OomError),
+	TooManyObjects,
+}
+impl From<DeviceMemoryAllocError> for SpriteBatchShadersError {
+	fn from(val: DeviceMemoryAllocError) -> Self {
+		SpriteBatchShadersError::DeviceMemoryAllocError(val)
+	}
+}
+impl From<OomError> for SpriteBatchShadersError {
+	fn from(val: OomError) -> Self {
+		SpriteBatchShadersError::OomError(val)
+	}
+}
+impl From<SamplerCreationError> for SpriteBatchShadersError {
+	fn from(val: SamplerCreationError) -> Self {
+		match val {
+			SamplerCreationError::OomError(err) => SpriteBatchShadersError::OomError(err),
+			SamplerCreationError::TooManyObjects => SpriteBatchShadersError::TooManyObjects,
+			_ => unreachable!(),
+		}
 	}
 }
 

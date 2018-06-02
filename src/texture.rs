@@ -31,27 +31,15 @@ impl Texture {
 						let (width, height) = img.dimensions();
 						let img = img.into_raw();
 
-						let img =
+						let (img, future) =
 							ImmutableImage::from_iter(
 								img.into_iter(),
 								Dimensions::Dim2d { width: width, height: height },
 								R8G8B8A8Srgb,
 								queue.clone(),
-							);
-						let (img, future) =
-							match img {
-								Ok(ret) => ret,
-								Err(ImageCreationError::AllocError(err)) => return Err(err.into()),
-								Err(_) => unreachable!(),
-							};
-						let future =
-							match future.then_signal_fence_and_flush() {
-								Ok(ret) => ret,
-								Err(FlushError::OomError(err)) => return Err(err.into()),
-								Err(_) => unreachable!(),
-							};
+							)?;
 
-						Ok(SpriteGpuData { image: img, future: future, })
+						Ok(SpriteGpuData { image: img, future: future.then_signal_fence_and_flush()? })
 					});
 
 				Ok(future)
@@ -122,9 +110,20 @@ pub enum TextureError {
 	DeviceMemoryAllocError(DeviceMemoryAllocError),
 	OomError(OomError),
 }
-impl From<io::Error> for TextureError {
-	fn from(val: io::Error) -> Self {
-		TextureError::IoError(val)
+impl From<FlushError> for TextureError {
+	fn from(val: FlushError) -> Self {
+		match val {
+			FlushError::OomError(err) => TextureError::OomError(err),
+			_ => unreachable!(),
+		}
+	}
+}
+impl From<ImageCreationError> for TextureError {
+	fn from(val: ImageCreationError) -> Self {
+		match val {
+			ImageCreationError::AllocError(err) => TextureError::DeviceMemoryAllocError(err),
+			_ => unreachable!(),
+		}
 	}
 }
 impl From<ImageError> for TextureError {
@@ -132,14 +131,9 @@ impl From<ImageError> for TextureError {
 		TextureError::ImageError(val)
 	}
 }
-impl From<DeviceMemoryAllocError> for TextureError {
-	fn from(val: DeviceMemoryAllocError) -> Self {
-		TextureError::DeviceMemoryAllocError(val)
-	}
-}
-impl From<OomError> for TextureError {
-	fn from(val: OomError) -> Self {
-		TextureError::OomError(val)
+impl From<io::Error> for TextureError {
+	fn from(val: io::Error) -> Self {
+		TextureError::IoError(val)
 	}
 }
 
