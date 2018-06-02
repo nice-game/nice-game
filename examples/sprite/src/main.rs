@@ -6,7 +6,8 @@ use nice_game::{
 	Context,
 	RenderTarget,
 	Version,
-	sprite::{ ImageFormat, Sprite, SpriteBatch, SpriteBatchShaders, SpriteBatchShared },
+	sprite::{ Sprite, SpriteBatch, SpriteBatchShaders, SpriteBatchShared },
+	texture::{ ImageFormat, Texture },
 	window::{ Event, EventsLoop, Window, WindowEvent },
 };
 
@@ -29,15 +30,15 @@ fn main() {
 
 	let sprite_batch_shared = SpriteBatchShared::new(SpriteBatchShaders::new(&mut window).unwrap(), window.format());
 
-	let sprite =
+	let texture =
 		block_on(
-			Sprite::from_file_with_format(
-				&mut window,
-				sprite_batch_shared.clone(),
+			Texture::from_file_with_format(
+				window.queue().clone(),
 				"examples/sprite/assets/colors.png",
 				ImageFormat::PNG
 			)
 		).unwrap();
+	let sprite = Sprite::new(&mut window, &sprite_batch_shared, &texture, [10.0, 10.0]);
 
 	let mut sprite_batch = SpriteBatch::new(&mut window, sprite_batch_shared).unwrap();
 	sprite_batch.add_sprite(sprite);

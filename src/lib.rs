@@ -13,6 +13,7 @@ extern crate winit;
 
 pub mod cpu_pool;
 pub mod sprite;
+pub mod texture;
 pub mod window;
 
 pub use vulkano::instance::Version;
