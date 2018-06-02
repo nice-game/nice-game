@@ -2,13 +2,15 @@ pub use image::ImageFormat;
 use { CPU_POOL, FS_POOL };
 use cpu_pool::CpuFuture;
 use futures::prelude::*;
-use image;
-use std::{ fs::File, io::prelude::*, path::Path, sync::Arc };
+use image::{ self, ImageError };
+use std::{ fs::File, io::{ self, prelude::* }, path::Path, sync::Arc };
 use vulkano::{
+	OomError,
 	command_buffer::{ AutoCommandBuffer, CommandBufferExecFuture },
 	device::Queue,
 	format::R8G8B8A8Srgb,
-	image::{ Dimensions, immutable::ImmutableImage },
+	image::{ Dimensions, ImageCreationError, immutable::ImmutableImage },
+	memory::DeviceMemoryAllocError,
 	sync::{ FenceSignalFuture, FlushError, GpuFuture, NowFuture },
 };
 
@@ -21,27 +23,35 @@ impl Texture {
 		let future = FS_POOL.lock().unwrap()
 			.dispatch(move |_| {
 				let mut bytes = vec![];
-				File::open(path).unwrap().read_to_end(&mut bytes).unwrap();
+				File::open(path)?.read_to_end(&mut bytes)?;
 
 				let future = CPU_POOL.lock().unwrap()
 					.dispatch(move |_| {
-						let img = image::load_from_memory_with_format(&bytes, format).unwrap().to_rgba();
+						let img = image::load_from_memory_with_format(&bytes, format)?.to_rgba();
 						let (width, height) = img.dimensions();
 						let img = img.into_raw();
 
-						let (img, img_future) =
+						let img =
 							ImmutableImage::from_iter(
 								img.into_iter(),
 								Dimensions::Dim2d { width: width, height: height },
 								R8G8B8A8Srgb,
 								queue.clone(),
-							)
-							.unwrap();
+							);
+						let (img, future) =
+							match img {
+								Ok(ret) => ret,
+								Err(ImageCreationError::AllocError(err)) => return Err(err.into()),
+								Err(_) => unreachable!(),
+							};
+						let future =
+							match future.then_signal_fence_and_flush() {
+								Ok(ret) => ret,
+								Err(FlushError::OomError(err)) => return Err(err.into()),
+								Err(_) => unreachable!(),
+							};
 
-						Ok(SpriteGpuData {
-							image: img,
-							future: img_future.then_signal_fence_and_flush().unwrap(),
-						})
+						Ok(SpriteGpuData { image: img, future: future, })
 					});
 
 				Ok(future)
@@ -60,7 +70,7 @@ pub struct TextureFuture {
 }
 impl Future for TextureFuture {
 	type Item = Texture;
-	type Error = ();
+	type Error = TextureError;
 
 	fn poll(&mut self, cx: &mut task::Context) -> Poll<Self::Item, Self::Error> {
 		let mut new_state = None;
@@ -103,9 +113,36 @@ impl Future for TextureFuture {
 	}
 }
 
+pub enum TextureError {
+	IoError(io::Error),
+	ImageError(ImageError),
+	DeviceMemoryAllocError(DeviceMemoryAllocError),
+	OomError(OomError),
+}
+impl From<io::Error> for TextureError {
+	fn from(val: io::Error) -> Self {
+		TextureError::IoError(val)
+	}
+}
+impl From<ImageError> for TextureError {
+	fn from(val: ImageError) -> Self {
+		TextureError::ImageError(val)
+	}
+}
+impl From<DeviceMemoryAllocError> for TextureError {
+	fn from(val: DeviceMemoryAllocError) -> Self {
+		TextureError::DeviceMemoryAllocError(val)
+	}
+}
+impl From<OomError> for TextureError {
+	fn from(val: OomError) -> Self {
+		TextureError::OomError(val)
+	}
+}
+
 enum SpriteState {
-	LoadingDisk(CpuFuture<CpuFuture<SpriteGpuData, ()>, ()>),
-	LoadingCpu(CpuFuture<SpriteGpuData, ()>),
+	LoadingDisk(CpuFuture<CpuFuture<SpriteGpuData, TextureError>, io::Error>),
+	LoadingCpu(CpuFuture<SpriteGpuData, TextureError>),
 	LoadingGpu(SpriteGpuData),
 }
 
