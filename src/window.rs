@@ -118,7 +118,7 @@ impl Window {
 		}
 	}
 
-	pub fn present<'a>(&mut self, drawables: &mut [&'a mut Drawable]) -> Result<(), DeviceMemoryAllocError> {
+	pub fn present<'a>(&mut self, drawables: Vec<(Option<&'a mut RenderTarget>, &'a mut [&'a mut Drawable])>) -> Result<(), DeviceMemoryAllocError> {
 		if self.resized.swap(false, Ordering::Relaxed) {
 			let dimensions = self.surface.capabilities(self.device.physical_device())
 				.expect("failed to get surface capabilities")
@@ -157,16 +157,19 @@ impl Window {
 			} else {
 				Box::new(acquire_future)
 			};
-		for drawable in drawables {
-			future =
-				Box::new(
-					future
-						.then_execute(
-							self.queue.clone(),
-							drawable.commands(self, image_num)?
-						)
-						.unwrap()
-				);
+		for (target, drawables) in drawables {
+			let queue = self.queue.clone();
+			let (target, image_num) = if let Some(target) = target {
+				if let Some(target_future) = target.take_future() {
+					future = Box::new(future.join(target_future));
+				}
+				(target, 0)
+			} else {
+				(self as _, image_num)
+			};
+			for drawable in drawables {
+				future = Box::new(future.then_execute(queue.clone(), drawable.commands(target, image_num)?).unwrap());
+			}
 		}
 		let future = future.then_swapchain_present(self.queue.clone(), self.swapchain.clone(), image_num)
 			.then_signal_fence_and_flush();
@@ -213,6 +216,10 @@ impl RenderTarget for Window {
 					Box::new(other)
 				}
 			);
+	}
+
+	fn take_future(&mut self) -> Option<Box<GpuFuture>> {
+		self.previous_frame_end.take()
 	}
 
 	fn queue(&self) -> &Arc<Queue> {

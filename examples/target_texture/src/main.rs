@@ -7,7 +7,7 @@ use nice_game::{
 	RenderTarget,
 	Version,
 	sprite::{ Sprite, SpriteBatch, SpriteBatchShaders, SpriteBatchShared },
-	texture::{ ImageFormat, ImmutableTexture },
+	texture::{ ImageFormat, ImmutableTexture, TargetTexture },
 	window::{ Event, EventsLoop, Window, WindowEvent },
 };
 
@@ -30,18 +30,21 @@ fn main() {
 
 	let sprite_batch_shared = SpriteBatchShared::new(SpriteBatchShaders::new(&mut window).unwrap(), window.format());
 
-	let texture =
-		block_on(
-			ImmutableTexture::from_file_with_format(
-				&window,
-				"examples/assets/colors.png",
-				ImageFormat::PNG
-			)
-		).unwrap();
-	let sprite = Sprite::new(&mut window, &sprite_batch_shared, &texture, [10.0, 10.0]).unwrap();
+	let mut target = TargetTexture::new(&window, [400, 400]).unwrap();
 
-	let mut sprite_batch = SpriteBatch::new(&mut window, sprite_batch_shared).unwrap();
-	sprite_batch.add_sprite(sprite);
+	let texture =
+		block_on(ImmutableTexture::from_file_with_format(&window, "examples/assets/colors.png", ImageFormat::PNG))
+			.unwrap();
+
+	let texture_sprite = Sprite::new(&mut target, &sprite_batch_shared, &texture, [0.0, 0.0]).unwrap();
+
+	let mut target_sprite_batch = SpriteBatch::new(&mut target, sprite_batch_shared.clone()).unwrap();
+	target_sprite_batch.add_sprite(texture_sprite);
+
+	let target_sprite = Sprite::new(&mut window, &sprite_batch_shared, &target, [10.0, 10.0]).unwrap();
+
+	let mut window_sprite_batch = SpriteBatch::new(&mut window, sprite_batch_shared).unwrap();
+	window_sprite_batch.add_sprite(target_sprite);
 
 	loop {
 		let mut done = false;
@@ -54,6 +57,10 @@ fn main() {
 			break;
 		}
 
-		window.present(vec![(None, &mut [&mut sprite_batch])]).unwrap();
+		window
+			.present(
+				vec![(Some(&mut target), &mut [&mut target_sprite_batch]), (None, &mut [&mut window_sprite_batch])]
+			)
+			.unwrap();
 	}
 }

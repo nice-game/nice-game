@@ -16,5 +16,6 @@ winit = "0.11"
 
 [workspace]
 members = [
-	"examples/sprite"
+	"examples/sprite",
+	"examples/target_texture"
 ]

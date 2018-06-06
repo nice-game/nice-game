@@ -87,7 +87,7 @@ impl Drawable for SpriteBatch {
 					.and_then(|fb| fb.build())
 					.map(|fb| Arc::new(fb))
 					.map_err(|err| {
-						match err { FramebufferCreationError::OomError(err) => err, err => unreachable!("{}", err) }
+						match err { FramebufferCreationError::OomError(err) => err, err => unreachable!("{:?}", err) }
 					})?;
 				self.framebuffers[image_num] = Some((Arc::downgrade(&target.images()[image_num]), framebuffer.clone()));
 

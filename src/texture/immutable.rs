@@ -1,25 +1,26 @@
-pub use image::ImageFormat;
 use { CPU_POOL, FS_POOL };
 use cpu_pool::CpuFuture;
 use futures::prelude::*;
-use image::{ self, ImageError };
+use image::{ self, ImageError, ImageFormat };
 use std::{ fs::File, io::{ self, prelude::* }, path::Path, sync::Arc };
+use texture::Texture;
 use vulkano::{
 	OomError,
 	command_buffer::{ AutoCommandBuffer, CommandBufferExecFuture },
-	device::Queue,
 	format::R8G8B8A8Srgb,
-	image::{ Dimensions, ImageCreationError, ImmutableImage },
+	image::{ Dimensions, ImageCreationError, ImageViewAccess, ImmutableImage },
 	memory::DeviceMemoryAllocError,
 	sync::{ FenceSignalFuture, FlushError, GpuFuture, NowFuture },
 };
+use window::Window;
 
-pub struct Texture {
-	image: Arc<ImmutableImage<R8G8B8A8Srgb>>,
+pub struct ImmutableTexture {
+	image: Arc<ImageViewAccess + Send + Sync + 'static>,
 }
-impl Texture {
-	pub fn from_file_with_format<P>(queue: Arc<Queue>, path: P, format: ImageFormat) -> TextureFuture
+impl ImmutableTexture {
+	pub fn from_file_with_format<P>(window: &Window, path: P, format: ImageFormat) -> TextureFuture
 	where P: AsRef<Path> + Send + 'static {
+		let queue = window.queue().clone();
 		let future = FS_POOL.lock().unwrap()
 			.dispatch(move |_| {
 				let mut bytes = vec![];
@@ -36,7 +37,7 @@ impl Texture {
 								img.into_iter(),
 								Dimensions::Dim2d { width: width, height: height },
 								R8G8B8A8Srgb,
-								queue.clone(),
+								queue,
 							)?;
 
 						Ok(SpriteGpuData { image: img, future: future.then_signal_fence_and_flush()? })
@@ -47,8 +48,9 @@ impl Texture {
 
 		TextureFuture { state: SpriteState::LoadingDisk(future) }
 	}
-
-	pub(super) fn image(&self) -> &Arc<ImmutableImage<R8G8B8A8Srgb>> {
+}
+impl Texture for ImmutableTexture {
+	fn image(&self) -> &Arc<ImageViewAccess + Send + Sync + 'static> {
 		&self.image
 	}
 }
@@ -57,7 +59,7 @@ pub struct TextureFuture {
 	state: SpriteState,
 }
 impl Future for TextureFuture {
-	type Item = Texture;
+	type Item = ImmutableTexture;
 	type Error = TextureError;
 
 	fn poll(&mut self, cx: &mut task::Context) -> Poll<Self::Item, Self::Error> {
@@ -89,7 +91,7 @@ impl Future for TextureFuture {
 
 		match &self.state {
 			SpriteState::LoadingGpu(data) => match data.future.wait(Some(Default::default())) {
-				Ok(()) => Ok(Async::Ready(Texture { image: data.image.clone() })),
+				Ok(()) => Ok(Async::Ready(ImmutableTexture { image: data.image.clone() })),
 				Err(FlushError::Timeout) => {
 					cx.waker().wake();
 					Ok(Async::Pending)

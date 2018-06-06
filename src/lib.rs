@@ -96,6 +96,7 @@ pub trait RenderTarget {
 	fn id_root(&self) -> &ObjectIdRoot;
 	fn images(&self) -> &[Arc<ImageViewAccess + Send + Sync + 'static>];
 	fn join_future(&mut self, other: Box<GpuFuture>);
+	fn take_future(&mut self) -> Option<Box<GpuFuture>>;
 	fn queue(&self) -> &Arc<Queue>;
 }
 
