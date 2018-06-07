@@ -1,11 +1,10 @@
 use { Drawable, ObjectId, RenderTarget, window::Window };
-use texture::Texture;
 use std::sync::{ Arc, Mutex, Weak };
 use vulkano::{
 	OomError,
 	buffer::{ BufferUsage, ImmutableBuffer },
 	command_buffer::{ AutoCommandBuffer, AutoCommandBufferBuilder, BuildError, DynamicState },
-	descriptor::{ DescriptorSet, descriptor_set::{ FixedSizeDescriptorSetsPool, PersistentDescriptorSet } },
+	descriptor::descriptor_set::FixedSizeDescriptorSetsPool,
 	device::Device,
 	format::Format,
 	framebuffer::{ Framebuffer, FramebufferAbstract, FramebufferCreationError, RenderPassAbstract, Subpass },
@@ -13,7 +12,7 @@ use vulkano::{
 	instance::QueueFamily,
 	memory::DeviceMemoryAllocError,
 	pipeline::{ GraphicsPipeline, GraphicsPipelineAbstract, viewport::Viewport },
-	sampler::{ Filter, MipmapMode, Sampler, SamplerAddressMode, SamplerCreationError },
+	sampler::SamplerCreationError,
 };
 
 pub struct MeshBatch {
@@ -54,8 +53,8 @@ impl Drawable for MeshBatch {
 					.map(|_| fb.clone())
 			});
 		let framebuffer =
-			if let Some(framebuffer) = framebuffer {
-				framebuffer
+			if let Some(framebuffer) = framebuffer.as_ref() {
+				framebuffer.clone()
 			} else {
 				let framebuffer = Framebuffer::start(self.shared.subpass.render_pass().clone())
 					.add(target.images()[image_num].clone())

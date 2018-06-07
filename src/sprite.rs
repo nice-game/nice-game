@@ -79,8 +79,8 @@ impl Drawable for SpriteBatch {
 					.map(|_| fb.clone())
 			});
 		let framebuffer =
-			if let Some(framebuffer) = framebuffer {
-				framebuffer
+			if let Some(framebuffer) = framebuffer.as_ref() {
+				framebuffer.clone()
 			} else {
 				let framebuffer = Framebuffer::start(self.shared.subpass.render_pass().clone())
 					.add(target.images()[image_num].clone())
