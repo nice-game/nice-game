@@ -12,6 +12,7 @@ extern crate vulkano_win;
 extern crate winit;
 
 pub mod cpu_pool;
+pub mod mesh;
 pub mod sprite;
 pub mod texture;
 pub mod window;
