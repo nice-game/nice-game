@@ -17,7 +17,7 @@ use vulkano::{
 		Swapchain,
 		SwapchainCreationError
 	},
-	sync::{ now, FlushError, GpuFuture },
+	sync::{ FlushError, GpuFuture },
 };
 use vulkano_win::VkSurfaceBuild;
 use winit;
@@ -73,12 +73,14 @@ impl Window {
 			.find(|&q| q.supports_graphics() && surface.is_supported(q).unwrap())
 			.expect("failed to find a graphical queue family");
 
-		let (device, mut queues) = Device::new(
-			pdevice,
-			&Features::none(),
-			&DeviceExtensions { khr_swapchain: true, .. DeviceExtensions::none() },
-			[(qfam, 1.0)].iter().cloned()
-		).expect("failed to create device");
+		let (device, mut queues) =
+			Device::new(
+				pdevice,
+				&Features::none(),
+				&DeviceExtensions { khr_swapchain: true, .. DeviceExtensions::none() },
+				[(qfam, 1.0)].iter().cloned()
+			)
+			.expect("failed to create device");
 		let queue = queues.next().unwrap();
 
 		let (swapchain, images) = {
@@ -101,8 +103,6 @@ impl Window {
 		};
 		let images = images.into_iter().map(|x| x as _).collect();
 
-		let previous_frame_end = Some(Box::new(now(device.clone())) as Box<GpuFuture>);
-
 		let resized = Arc::<AtomicBool>::default();
 		events.resized.insert(surface.window().id(), resized.clone());
 
@@ -112,7 +112,7 @@ impl Window {
 			queue: queue,
 			swapchain: swapchain,
 			images: images,
-			previous_frame_end: previous_frame_end,
+			previous_frame_end: None,
 			resized: resized,
 			id_root: ObjectIdRoot::new(),
 		}
