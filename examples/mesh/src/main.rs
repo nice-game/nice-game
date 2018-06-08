@@ -1,13 +1,11 @@
 extern crate futures;
 extern crate nice_game;
 
-use futures::executor::block_on;
 use nice_game::{
 	Context,
 	RenderTarget,
 	Version,
-	mesh::{ Mesh, MeshBatch, MeshBatchShaders, MeshBatchShared },
-	texture::{ ImageFormat, ImmutableTexture },
+	mesh::{ Mesh, MeshBatch, MeshBatchShaders, MeshBatchShared, MeshVertex },
 	window::{ Event, EventsLoop, Window, WindowEvent },
 };
 
@@ -30,7 +28,18 @@ fn main() {
 
 	let mesh_batch_shared = MeshBatchShared::new(MeshBatchShaders::new(&mut window).unwrap(), window.format());
 
-	let mesh = Mesh::new(&mut window, [10.0, 10.0]).unwrap();
+	let mesh = Mesh::new(
+		&mut window,
+		vec![
+			MeshVertex { position: [0.0, 0.0] },
+			MeshVertex { position: [1.0, 0.0] },
+			MeshVertex { position: [0.0, 1.0] },
+			MeshVertex { position: [0.0, 1.0] },
+			MeshVertex { position: [1.0, 0.0] },
+			MeshVertex { position: [1.0, 1.0] },
+		].into_iter(),
+		[10.0, 10.0]
+	).unwrap();
 
 	let mut mesh_batch = MeshBatch::new(&mut window, mesh_batch_shared).unwrap();
 	mesh_batch.add_mesh(mesh);

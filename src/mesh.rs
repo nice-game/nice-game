@@ -136,30 +136,13 @@ impl MeshBatchShared {
 
 pub struct MeshBatchShaders {
 	device: Arc<Device>,
-	vertices: Arc<ImmutableBuffer<[MeshVertex; 6]>>,
 	vertex_shader: vs::Shader,
 	fragment_shader: fs::Shader,
 }
 impl MeshBatchShaders {
-	pub fn new(window: &mut Window) -> Result<Arc<Self>, MeshBatchShadersError> {
-		let (vertices, vertex_future) =
-			ImmutableBuffer::from_data(
-				[
-					MeshVertex { position: [0.0, 0.0] },
-					MeshVertex { position: [1.0, 0.0] },
-					MeshVertex { position: [0.0, 1.0] },
-					MeshVertex { position: [0.0, 1.0] },
-					MeshVertex { position: [1.0, 0.0] },
-					MeshVertex { position: [1.0, 1.0] },
-				],
-				BufferUsage::vertex_buffer(),
-				window.queue().clone(),
-			)?;
-		window.join_future(Box::new(vertex_future));
-
+	pub fn new(window: &Window) -> Result<Arc<Self>, MeshBatchShadersError> {
 		Ok(Arc::new(Self {
 			device: window.device().clone(),
-			vertices: vertices,
 			vertex_shader: vs::Shader::load(window.device().clone())?,
 			fragment_shader: fs::Shader::load(window.device().clone())?,
 		}))
@@ -194,17 +177,26 @@ impl From<SamplerCreationError> for MeshBatchShadersError {
 
 pub struct Mesh {
 	position: Arc<ImmutableBuffer<[f32; 2]>>,
+	vertices: Arc<ImmutableBuffer<[MeshVertex]>>,
 }
 impl Mesh {
-	pub fn new(
+	pub fn new<D>(
 		target: &mut RenderTarget,
+		vertices: D,
 		position: [f32; 2],
-	) -> Result<Self, DeviceMemoryAllocError> {
+	) -> Result<Self, DeviceMemoryAllocError>
+	where
+		D: ExactSizeIterator<Item = MeshVertex>,
+	{
+		let (vertices, vertex_future) =
+			ImmutableBuffer::from_iter(vertices, BufferUsage::vertex_buffer(), target.queue().clone())?;
+		target.join_future(Box::new(vertex_future));
+
 		let (position, future) =
 			ImmutableBuffer::from_data(position, BufferUsage::uniform_buffer(), target.queue().clone())?;
 		target.join_future(Box::new(future));
 
-		Ok(Self { position: position })
+		Ok(Self { position: position, vertices: vertices })
 	}
 
 	fn make_commands(
@@ -228,7 +220,7 @@ impl Mesh {
 						]),
 						scissors: None,
 					},
-					vec![shared.shaders.vertices.clone()],
+					vec![self.vertices.clone()],
 					shared.mesh_desc_pool.lock().unwrap()
 						.next()
 						.add_buffer(self.position.clone())
@@ -245,7 +237,7 @@ impl Mesh {
 }
 
 #[derive(Debug, Clone)]
-struct MeshVertex { position: [f32; 2] }
+pub struct MeshVertex { pub position: [f32; 2] }
 impl_vertex!(MeshVertex, position);
 
 mod vs {
@@ -264,8 +256,7 @@ layout(set = 0, binding = 0) uniform MeshDynamic {
 void main() {
 	tex_coords = position;
 	gl_Position = vec4(2 * position - 1, 0.0, 1.0);
-}
-"]
+}"]
 	struct Dummy;
 }
 
@@ -280,7 +271,6 @@ layout(location = 0) out vec4 f_color;
 
 void main() {
 	f_color = vec4(tex_coords, 1, 1);
-}
-"]
+}"]
 	struct Dummy;
 }
