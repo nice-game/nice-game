@@ -1,4 +1,5 @@
 extern crate atom;
+extern crate cgmath;
 extern crate futures;
 extern crate image;
 #[macro_use]
@@ -11,13 +12,14 @@ extern crate vulkano_shader_derive;
 extern crate vulkano_win;
 extern crate winit;
 
+pub mod camera;
 pub mod cpu_pool;
 pub mod mesh;
 pub mod sprite;
 pub mod texture;
 pub mod window;
 
-pub use vulkano::instance::Version;
+pub use vulkano::{ instance::Version, sync::GpuFuture };
 
 use cpu_pool::CpuPool;
 use std::{ cmp::min, sync::{ Arc, Mutex, Weak } };
@@ -28,7 +30,6 @@ use vulkano::{
 	image::ImageViewAccess,
 	instance::{ ApplicationInfo, Instance, InstanceCreationError },
 	memory::DeviceMemoryAllocError,
-	sync::GpuFuture,
 };
 
 lazy_static! {

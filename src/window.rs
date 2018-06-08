@@ -1,6 +1,6 @@
 pub use winit::{ Event, WindowEvent, WindowId };
 
-use { Context, Drawable, ObjectIdRoot, RenderTarget };
+use { Context, ObjectIdRoot, RenderTarget };
 use std::{ collections::HashMap, iter::Iterator, sync::{ Arc, atomic::{ AtomicBool, Ordering } }};
 use vulkano::{
 	device::{ Device, DeviceExtensions, Queue },
@@ -118,7 +118,13 @@ impl Window {
 		}
 	}
 
-	pub fn present<'a>(&mut self, drawables: Vec<(Option<&'a mut RenderTarget>, &'a mut [&'a mut Drawable])>) -> Result<(), DeviceMemoryAllocError> {
+	pub fn present<F>(
+		&mut self,
+		get_commands: impl FnOnce(&mut Self, usize, Box<GpuFuture>) -> F
+	) -> Result<(), DeviceMemoryAllocError>
+	where
+		F: GpuFuture + 'static
+	{
 		if self.resized.swap(false, Ordering::Relaxed) {
 			let dimensions = self.surface.capabilities(self.device.physical_device())
 				.expect("failed to get surface capabilities")
@@ -157,20 +163,7 @@ impl Window {
 			} else {
 				Box::new(acquire_future)
 			};
-		for (target, drawables) in drawables {
-			let queue = self.queue.clone();
-			let (target, image_num) = if let Some(target) = target {
-				if let Some(target_future) = target.take_future() {
-					future = Box::new(future.join(target_future));
-				}
-				(target, 0)
-			} else {
-				(self as _, image_num)
-			};
-			for drawable in drawables {
-				future = Box::new(future.then_execute(queue.clone(), drawable.commands(target, image_num)?).unwrap());
-			}
-		}
+		future = Box::new(get_commands(self, image_num, future));
 		let future = future.then_swapchain_present(self.queue.clone(), self.swapchain.clone(), image_num)
 			.then_signal_fence_and_flush();
 		self.previous_frame_end =

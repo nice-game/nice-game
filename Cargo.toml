@@ -5,6 +5,7 @@ authors = ["IcyDefiance <icydefiance@gmail.com>"]
 
 [dependencies]
 atom = "0.3"
+cgmath = "0.16"
 futures = "0.2"
 image = "0.19"
 lazy_static = "1.0"

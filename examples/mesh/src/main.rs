@@ -3,6 +3,7 @@ extern crate nice_game;
 
 use nice_game::{
 	Context,
+	GpuFuture,
 	RenderTarget,
 	Version,
 	mesh::{ Mesh, MeshBatch, MeshBatchShaders, MeshBatchShared, MeshVertex },
@@ -55,6 +56,10 @@ fn main() {
 			break;
 		}
 
-		window.present(vec![(None, &mut [&mut mesh_batch])]).unwrap();
+		window
+			.present(|window, image_num, future| {
+				future.then_execute(window.queue().clone(), mesh_batch.commands(window, image_num).unwrap()).unwrap()
+			})
+			.unwrap();
 	}
 }

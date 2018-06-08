@@ -1,4 +1,4 @@
-use { Drawable, ObjectId, RenderTarget, window::Window };
+use { ObjectId, RenderTarget, window::Window };
 use texture::Texture;
 use std::sync::{ Arc, Mutex, Weak };
 use vulkano::{
@@ -61,9 +61,8 @@ impl SpriteBatch {
 				.unwrap()
 		))
 	}
-}
-impl Drawable for SpriteBatch {
-	fn commands(
+
+	pub fn commands(
 		&mut self,
 		target: &mut RenderTarget,
 		image_num: usize,

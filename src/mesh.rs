@@ -1,4 +1,4 @@
-use { Drawable, ObjectId, RenderTarget, window::Window };
+use { ObjectId, RenderTarget, window::Window };
 use std::sync::{ Arc, Mutex, Weak };
 use vulkano::{
 	OomError,
@@ -35,9 +35,8 @@ impl MeshBatch {
 	pub fn add_mesh(&mut self, mesh: Mesh) {
 		self.meshes.push(mesh);
 	}
-}
-impl Drawable for MeshBatch {
-	fn commands(
+
+	pub fn commands(
 		&mut self,
 		target: &mut RenderTarget,
 		image_num: usize,

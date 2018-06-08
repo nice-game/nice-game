@@ -4,6 +4,7 @@ extern crate nice_game;
 use futures::executor::block_on;
 use nice_game::{
 	Context,
+	GpuFuture,
 	RenderTarget,
 	Version,
 	sprite::{ Sprite, SpriteBatch, SpriteBatchShaders, SpriteBatchShared },
@@ -54,6 +55,10 @@ fn main() {
 			break;
 		}
 
-		window.present(vec![(None, &mut [&mut sprite_batch])]).unwrap();
+		window
+			.present(|window, image_num, future| {
+				future.then_execute(window.queue().clone(), sprite_batch.commands(window, image_num).unwrap()).unwrap()
+			})
+			.unwrap();
 	}
 }
