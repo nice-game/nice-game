@@ -118,6 +118,14 @@ impl Window {
 		}
 	}
 
+	pub fn join_future(&mut self, future: impl GpuFuture + 'static) {
+		if let Some(previous_frame_end) = self.previous_frame_end.take() {
+			self.previous_frame_end = Some(Box::new(previous_frame_end.join(future)));
+		} else {
+			self.previous_frame_end = Some(Box::new(future));
+		}
+	}
+
 	pub fn present<F>(
 		&mut self,
 		get_commands: impl FnOnce(&mut Self, usize, Box<GpuFuture>) -> F
@@ -198,21 +206,6 @@ impl RenderTarget for Window {
 
 	fn images(&self) -> &[Arc<ImageViewAccess + Send + Sync + 'static>] {
 		&self.images
-	}
-
-	fn join_future(&mut self, other: Box<GpuFuture>) {
-		self.previous_frame_end =
-			Some(
-				if let Some(future) = self.previous_frame_end.take() {
-					Box::new(future.join(other))
-				} else {
-					Box::new(other)
-				}
-			);
-	}
-
-	fn take_future(&mut self) -> Option<Box<GpuFuture>> {
-		self.previous_frame_end.take()
 	}
 
 	fn queue(&self) -> &Arc<Queue> {

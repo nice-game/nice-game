@@ -19,7 +19,7 @@ pub mod sprite;
 pub mod texture;
 pub mod window;
 
-pub use vulkano::{ instance::Version, sync::GpuFuture };
+pub use vulkano::{ command_buffer::CommandBuffer, instance::Version, sync::GpuFuture };
 
 use cpu_pool::CpuPool;
 use std::{ cmp::min, sync::{ Arc, Mutex, Weak } };
@@ -95,7 +95,5 @@ pub trait RenderTarget {
 	fn format(&self) -> Format;
 	fn id_root(&self) -> &ObjectIdRoot;
 	fn images(&self) -> &[Arc<ImageViewAccess + Send + Sync + 'static>];
-	fn join_future(&mut self, other: Box<GpuFuture>);
-	fn take_future(&mut self) -> Option<Box<GpuFuture>>;
 	fn queue(&self) -> &Arc<Queue>;
 }

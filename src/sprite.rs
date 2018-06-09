@@ -14,6 +14,7 @@ use vulkano::{
 	memory::DeviceMemoryAllocError,
 	pipeline::{ GraphicsPipeline, GraphicsPipelineAbstract, viewport::Viewport },
 	sampler::{ Filter, MipmapMode, Sampler, SamplerAddressMode, SamplerCreationError },
+	sync::GpuFuture,
 };
 
 pub struct SpriteBatch {
@@ -25,18 +26,21 @@ pub struct SpriteBatch {
 	target_desc: Arc<DescriptorSet + Send + Sync + 'static>,
 }
 impl SpriteBatch {
-	pub fn new(target: &mut RenderTarget, shared: Arc<SpriteBatchShared>) -> Result<Self, DeviceMemoryAllocError> {
+	pub fn new(target: &mut RenderTarget, shared: Arc<SpriteBatchShared>) -> Result<(Self, impl GpuFuture), DeviceMemoryAllocError> {
 		let dimensions = target.images()[0].dimensions();
-		let target_descs =
+		let (target_descs, future) =
 			Self::make_target_desc(target, &shared, dimensions.width() as f32, dimensions.height() as f32)?;
 
-		Ok(Self {
-			shared: shared,
-			meshes: vec![],
-			framebuffers: vec![None; target.images().len()],
-			target_id: target.id_root().make_id(),
-			target_desc: target_descs,
-		})
+		Ok((
+			Self {
+				shared: shared,
+				meshes: vec![],
+				framebuffers: vec![None; target.images().len()],
+				target_id: target.id_root().make_id(),
+				target_desc: target_descs,
+			},
+			future
+		))
 	}
 
 	pub fn add_sprite(&mut self, sprite: Sprite) {
@@ -48,17 +52,19 @@ impl SpriteBatch {
 		shared: &SpriteBatchShared,
 		width: f32,
 		height: f32
-	) -> Result<Arc<DescriptorSet + Send + Sync + 'static>, DeviceMemoryAllocError> {
+	) -> Result<(Arc<DescriptorSet + Send + Sync + 'static>, impl GpuFuture), DeviceMemoryAllocError> {
 		let (target_size, future) =
 			ImmutableBuffer::from_data([width, height], BufferUsage::uniform_buffer(), target.queue().clone())?;
-		target.join_future(Box::new(future));
 
-		Ok(Arc::new(
-			PersistentDescriptorSet::start(shared.pipeline.clone(), 0)
-				.add_buffer(target_size.clone())
-				.unwrap()
-				.build()
-				.unwrap()
+		Ok((
+			Arc::new(
+				PersistentDescriptorSet::start(shared.pipeline.clone(), 0)
+					.add_buffer(target_size.clone())
+					.unwrap()
+					.build()
+					.unwrap()
+			),
+			future
 		))
 	}
 
@@ -66,7 +72,7 @@ impl SpriteBatch {
 		&mut self,
 		target: &mut RenderTarget,
 		image_num: usize,
-	) -> Result<AutoCommandBuffer, DeviceMemoryAllocError> {
+	) -> Result<(AutoCommandBuffer, Option<impl GpuFuture>), DeviceMemoryAllocError> {
 		assert!(self.target_id.is_child_of(target.id_root()));
 
 		let framebuffer = self.framebuffers[image_num].as_ref()
@@ -77,9 +83,9 @@ impl SpriteBatch {
 					.next()
 					.map(|_| fb.clone())
 			});
-		let framebuffer =
+		let (framebuffer, future) =
 			if let Some(framebuffer) = framebuffer.as_ref() {
-				framebuffer.clone()
+				(framebuffer.clone(), None)
 			} else {
 				let framebuffer = Framebuffer::start(self.shared.subpass.render_pass().clone())
 					.add(target.images()[image_num].clone())
@@ -90,10 +96,17 @@ impl SpriteBatch {
 					})?;
 				self.framebuffers[image_num] = Some((Arc::downgrade(&target.images()[image_num]), framebuffer.clone()));
 
-				self.target_desc =
-					Self::make_target_desc(target, &self.shared, framebuffer.width() as f32, framebuffer.height() as f32)?;
+				let (target_desc, future) =
+					Self::make_target_desc(
+						target,
+						&self.shared,
+						framebuffer.width() as f32,
+						framebuffer.height() as f32
+					)?;
 
-				framebuffer
+				self.target_desc = target_desc;
+
+				(framebuffer as _, Some(future))
 			};
 
 		let dimensions = [framebuffer.width() as f32, framebuffer.height() as f32];
@@ -114,11 +127,12 @@ impl SpriteBatch {
 				};
 		}
 
-		Ok(
+		Ok((
 			command_buffer.end_render_pass().unwrap()
 				.build()
-				.map_err(|err| match err { BuildError::OomError(err) => err, err => unreachable!("{}", err) })?
-		)
+				.map_err(|err| match err { BuildError::OomError(err) => err, err => unreachable!("{}", err) })?,
+			future
+		))
 	}
 }
 
@@ -171,8 +185,8 @@ pub struct SpriteBatchShaders {
 	sampler: Arc<Sampler>,
 }
 impl SpriteBatchShaders {
-	pub fn new(window: &mut Window) -> Result<Arc<Self>, SpriteBatchShadersError> {
-		let (vertices, vertex_future) =
+	pub fn new(window: &mut Window) -> Result<(Arc<Self>, impl GpuFuture), SpriteBatchShadersError> {
+		let (vertices, future) =
 			ImmutableBuffer::from_data(
 				[
 					SpriteVertex { position: [0.0, 0.0] },
@@ -185,24 +199,26 @@ impl SpriteBatchShaders {
 				BufferUsage::vertex_buffer(),
 				window.queue().clone(),
 			)?;
-		window.join_future(Box::new(vertex_future));
 
-		Ok(Arc::new(Self {
-			device: window.device().clone(),
-			vertices: vertices,
-			vertex_shader: vs::Shader::load(window.device().clone())?,
-			fragment_shader: fs::Shader::load(window.device().clone())?,
-			sampler:
-				Sampler::new(
-					window.device().clone(),
-					Filter::Linear,
-					Filter::Linear, MipmapMode::Nearest,
-					SamplerAddressMode::Repeat,
-					SamplerAddressMode::Repeat,
-					SamplerAddressMode::Repeat,
-					0.0, 1.0, 0.0, 0.0
-				)?,
-		}))
+		Ok((
+			Arc::new(Self {
+				device: window.device().clone(),
+				vertices: vertices,
+				vertex_shader: vs::Shader::load(window.device().clone())?,
+				fragment_shader: fs::Shader::load(window.device().clone())?,
+				sampler:
+					Sampler::new(
+						window.device().clone(),
+						Filter::Linear,
+						Filter::Linear, MipmapMode::Nearest,
+						SamplerAddressMode::Repeat,
+						SamplerAddressMode::Repeat,
+						SamplerAddressMode::Repeat,
+						0.0, 1.0, 0.0, 0.0
+					)?,
+			}),
+			future
+		))
 	}
 }
 
@@ -237,22 +253,24 @@ pub struct Sprite {
 	position: Arc<ImmutableBuffer<[f32; 2]>>,
 }
 impl Sprite {
-	pub fn new(target: &mut RenderTarget, shared: &SpriteBatchShared, texture: &Texture, position: [f32; 2]) -> Result<Self, DeviceMemoryAllocError> {
+	pub fn new(target: &mut RenderTarget, shared: &SpriteBatchShared, texture: &Texture, position: [f32; 2]) -> Result<(Self, impl GpuFuture), DeviceMemoryAllocError> {
 		let (position, future) =
 			ImmutableBuffer::from_data(position, BufferUsage::uniform_buffer(), target.queue().clone())?;
-		target.join_future(Box::new(future));
 
-		Ok(Self {
-			static_desc:
-				Arc::new(
-					PersistentDescriptorSet::start(shared.pipeline.clone(), 2)
-						.add_sampled_image(texture.image().clone(), shared.shaders.sampler.clone())
-						.unwrap()
-						.build()
-						.unwrap()
-				),
-			position: position
-		})
+		Ok((
+			Self {
+				static_desc:
+					Arc::new(
+						PersistentDescriptorSet::start(shared.pipeline.clone(), 2)
+							.add_sampled_image(texture.image().clone(), shared.shaders.sampler.clone())
+							.unwrap()
+							.build()
+							.unwrap()
+					),
+				position: position
+			},
+			future
+		))
 	}
 
 	fn make_commands(

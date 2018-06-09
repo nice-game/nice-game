@@ -13,6 +13,7 @@ use vulkano::{
 	memory::DeviceMemoryAllocError,
 	pipeline::{ GraphicsPipeline, GraphicsPipelineAbstract, viewport::Viewport },
 	sampler::SamplerCreationError,
+	sync::GpuFuture,
 };
 
 pub struct MeshBatch {
@@ -183,19 +184,17 @@ impl Mesh {
 		target: &mut RenderTarget,
 		vertices: D,
 		position: [f32; 2],
-	) -> Result<Self, DeviceMemoryAllocError>
+	) -> Result<(Self, impl GpuFuture), DeviceMemoryAllocError>
 	where
 		D: ExactSizeIterator<Item = MeshVertex>,
 	{
-		let (vertices, vertex_future) =
+		let (vertices, vertices_future) =
 			ImmutableBuffer::from_iter(vertices, BufferUsage::vertex_buffer(), target.queue().clone())?;
-		target.join_future(Box::new(vertex_future));
 
-		let (position, future) =
+		let (position, position_future) =
 			ImmutableBuffer::from_data(position, BufferUsage::uniform_buffer(), target.queue().clone())?;
-		target.join_future(Box::new(future));
 
-		Ok(Self { position: position, vertices: vertices })
+		Ok((Self { position: position, vertices: vertices }, vertices_future.join(position_future)))
 	}
 
 	fn make_commands(

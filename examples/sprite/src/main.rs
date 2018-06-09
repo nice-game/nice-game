@@ -29,7 +29,9 @@ fn main() {
 			"nIce Game"
 		);
 
-	let sprite_batch_shared = SpriteBatchShared::new(SpriteBatchShaders::new(&mut window).unwrap(), window.format());
+	let (shaders, shaders_future) = SpriteBatchShaders::new(&mut window).unwrap();
+
+	let sprite_batch_shared = SpriteBatchShared::new(shaders, window.format());
 
 	let texture =
 		block_on(
@@ -39,10 +41,12 @@ fn main() {
 				ImageFormat::PNG
 			)
 		).unwrap();
-	let sprite = Sprite::new(&mut window, &sprite_batch_shared, &texture, [10.0, 10.0]).unwrap();
+	let (sprite, sprite_future) = Sprite::new(&mut window, &sprite_batch_shared, &texture, [10.0, 10.0]).unwrap();
 
-	let mut sprite_batch = SpriteBatch::new(&mut window, sprite_batch_shared).unwrap();
+	let (mut sprite_batch, sprite_batch_future) = SpriteBatch::new(&mut window, sprite_batch_shared).unwrap();
 	sprite_batch.add_sprite(sprite);
+
+	window.join_future(shaders_future.join(sprite_future).join(sprite_batch_future));
 
 	loop {
 		let mut done = false;
@@ -56,8 +60,13 @@ fn main() {
 		}
 
 		window
-			.present(|window, image_num, future| {
-				future.then_execute(window.queue().clone(), sprite_batch.commands(window, image_num).unwrap()).unwrap()
+			.present(|window, image_num, mut future| {
+				let (commands, commands_future) = sprite_batch.commands(window, image_num).unwrap();
+				if let Some(commands_future) = commands_future {
+					future = Box::new(future.join(commands_future));
+				}
+
+				future.then_execute(window.queue().clone(), commands).unwrap()
 			})
 			.unwrap();
 	}

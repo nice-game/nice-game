@@ -29,7 +29,7 @@ fn main() {
 
 	let mesh_batch_shared = MeshBatchShared::new(MeshBatchShaders::new(&mut window).unwrap(), window.format());
 
-	let mesh = Mesh::new(
+	let (mesh, mesh_future) = Mesh::new(
 		&mut window,
 		vec![
 			MeshVertex { position: [0.0, 0.0] },
@@ -44,6 +44,8 @@ fn main() {
 
 	let mut mesh_batch = MeshBatch::new(&mut window, mesh_batch_shared).unwrap();
 	mesh_batch.add_mesh(mesh);
+
+	window.join_future(mesh_future);
 
 	loop {
 		let mut done = false;
