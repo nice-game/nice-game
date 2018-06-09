@@ -21,7 +21,7 @@ pub struct SpriteBatch {
 	shared: Arc<SpriteBatchShared>,
 	meshes: Vec<Sprite>,
 	framebuffers:
-		Vec<Option<(Weak<ImageViewAccess + Send + Sync + 'static>, Arc<FramebufferAbstract + Send + Sync + 'static>)>>,
+		Vec<(Weak<ImageViewAccess + Send + Sync + 'static>, Arc<FramebufferAbstract + Send + Sync + 'static>)>,
 	target_id: ObjectId,
 	target_desc: Arc<DescriptorSet + Send + Sync + 'static>,
 }
@@ -31,11 +31,24 @@ impl SpriteBatch {
 		let (target_descs, future) =
 			Self::make_target_desc(target.queue().clone(), &shared, dimensions.width(), dimensions.height())?;
 
+		let framebuffers =
+			target.images().iter()
+				.map(|image| {
+					Framebuffer::start(shared.subpass.render_pass().clone())
+						.add(image.clone())
+						.and_then(|fb| fb.build())
+						.map(|fb| (Arc::downgrade(&image), Arc::new(fb) as _))
+						.map_err(|err| {
+							match err { FramebufferCreationError::OomError(err) => err, err => unreachable!("{:?}", err) }
+						})
+				})
+				.collect::<Result<Vec<_>, _>>()?;
+
 		Ok((
 			Self {
 				shared: shared,
 				meshes: vec![],
-				framebuffers: vec![None; target.images().len()],
+				framebuffers: framebuffers,
 				target_id: target.id_root().make_id(),
 				target_desc: target_descs,
 			},
@@ -75,14 +88,12 @@ impl SpriteBatch {
 	) -> Result<(AutoCommandBuffer, Option<impl GpuFuture>), DeviceMemoryAllocError> {
 		assert!(self.target_id.is_child_of(target.id_root()));
 
-		let framebuffer = self.framebuffers[image_num].as_ref()
-			.and_then(|(old_image, fb)| {
-				old_image.upgrade()
-					.iter()
-					.filter(|old_image| Arc::ptr_eq(&target.images()[image_num], &old_image))
-					.next()
-					.map(|_| fb.clone())
-			});
+		let framebuffer = self.framebuffers[image_num].0
+			.upgrade()
+			.iter()
+			.filter(|old_image| Arc::ptr_eq(&target.images()[image_num], &old_image))
+			.next()
+			.map(|_| self.framebuffers[image_num].1.clone());
 		let (framebuffer, future) =
 			if let Some(framebuffer) = framebuffer.as_ref() {
 				(framebuffer.clone(), None)
@@ -94,7 +105,7 @@ impl SpriteBatch {
 					.map_err(|err| {
 						match err { FramebufferCreationError::OomError(err) => err, err => unreachable!("{:?}", err) }
 					})?;
-				self.framebuffers[image_num] = Some((Arc::downgrade(&target.images()[image_num]), framebuffer.clone()));
+				self.framebuffers[image_num] = (Arc::downgrade(&target.images()[image_num]), framebuffer.clone());
 
 				let (target_desc, future) =
 					Self::make_target_desc(
