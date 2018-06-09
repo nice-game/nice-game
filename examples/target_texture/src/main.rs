@@ -32,24 +32,24 @@ fn main() {
 	let (shaders, shaders_future) = SpriteBatchShaders::new(&mut window).unwrap();
 	let sprite_batch_shared = SpriteBatchShared::new(shaders, window.format());
 
-	let mut target = TargetTexture::new(&window, [400, 400]).unwrap();
+	let target = TargetTexture::new(&window, [400, 400]).unwrap();
 
 	let texture =
 		block_on(ImmutableTexture::from_file_with_format(&window, "examples/assets/colors.png", ImageFormat::PNG))
 			.unwrap();
 
 	let (texture_sprite, texture_sprite_future) =
-		Sprite::new(&mut target, &sprite_batch_shared, &texture, [0.0, 0.0]).unwrap();
+		Sprite::new(&window, &sprite_batch_shared, &texture, [0.0, 0.0]).unwrap();
 
 	let (mut target_sprite_batch, target_sprite_batch_future) =
-		SpriteBatch::new(&mut target, sprite_batch_shared.clone()).unwrap();
+		SpriteBatch::new(&window, &target, sprite_batch_shared.clone()).unwrap();
 	target_sprite_batch.add_sprite(texture_sprite);
 
 	let (target_sprite, target_sprite_future) =
-		Sprite::new(&mut window, &sprite_batch_shared, &target, [10.0, 10.0]).unwrap();
+		Sprite::new(&window, &sprite_batch_shared, &target, [10.0, 10.0]).unwrap();
 
 	let (mut window_sprite_batch, window_sprite_batch_future) =
-		SpriteBatch::new(&mut window, sprite_batch_shared).unwrap();
+		SpriteBatch::new(&window, &window, sprite_batch_shared).unwrap();
 	window_sprite_batch.add_sprite(target_sprite);
 
 	window.join_future(
@@ -72,12 +72,12 @@ fn main() {
 
 		window
 			.present(|window, image_num, mut future| {
-				let (target_commands, target_future) = target_sprite_batch.commands(&mut target, 0).unwrap();
+				let (target_commands, target_future) = target_sprite_batch.commands(window, &target, 0).unwrap();
 				if let Some(target_future) = target_future {
 					future = Box::new(future.join(target_future));
 				}
 
-				let (window_commands, window_future) = window_sprite_batch.commands(window, image_num).unwrap();
+				let (window_commands, window_future) = window_sprite_batch.commands(window, window, image_num).unwrap();
 				if let Some(window_future) = window_future {
 					future = Box::new(future.join(window_future));
 				}

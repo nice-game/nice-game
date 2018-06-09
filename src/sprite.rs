@@ -26,12 +26,13 @@ pub struct SpriteBatch {
 }
 impl SpriteBatch {
 	pub fn new(
-		target: &mut RenderTarget,
+		window: &Window,
+		target: &RenderTarget,
 		shared: Arc<SpriteBatchShared>
 	) -> Result<(Self, impl GpuFuture), DeviceMemoryAllocError> {
 		let dimensions = target.images()[0].dimensions();
 		let (target_descs, future) =
-			Self::make_target_desc(target.queue().clone(), &shared, dimensions.width(), dimensions.height())?;
+			Self::make_target_desc(window.queue().clone(), &shared, dimensions.width(), dimensions.height())?;
 
 		let framebuffers =
 			target.images().iter()
@@ -86,6 +87,7 @@ impl SpriteBatch {
 
 	pub fn commands(
 		&mut self,
+		window: &Window,
 		target: &RenderTarget,
 		image_num: usize,
 	) -> Result<(AutoCommandBuffer, Option<impl GpuFuture>), DeviceMemoryAllocError> {
@@ -113,7 +115,7 @@ impl SpriteBatch {
 
 				let (target_desc, future) =
 					Self::make_target_desc(
-						target.queue().clone(),
+						window.queue().clone(),
 						&self.shared,
 						framebuffer.width(),
 						framebuffer.height()
@@ -127,7 +129,7 @@ impl SpriteBatch {
 		let dimensions = [framebuffer.width() as f32, framebuffer.height() as f32];
 
 		let mut command_buffer =
-			AutoCommandBufferBuilder::primary_one_time_submit(self.shared.shaders.device.clone(), target.queue().family())?
+			AutoCommandBufferBuilder::primary_one_time_submit(self.shared.shaders.device.clone(), window.queue().family())?
 				.begin_render_pass(framebuffer, true, vec![[0.1, 0.1, 0.1, 1.0].into()])
 				.unwrap();
 
@@ -136,7 +138,7 @@ impl SpriteBatch {
 				unsafe {
 					command_buffer
 						.execute_commands(
-							mesh.make_commands(&self.shared, &self.target_desc, target.queue().family(), dimensions)?
+							mesh.make_commands(&self.shared, &self.target_desc, window.queue().family(), dimensions)?
 						)
 						.unwrap()
 				};
@@ -269,13 +271,13 @@ pub struct Sprite {
 }
 impl Sprite {
 	pub fn new(
-		target: &mut RenderTarget,
+		window: &Window,
 		shared: &SpriteBatchShared,
 		texture: &Texture,
 		position: [f32; 2]
 	) -> Result<(Self, impl GpuFuture), DeviceMemoryAllocError> {
 		let (position, future) =
-			ImmutableBuffer::from_data(position, BufferUsage::uniform_buffer(), target.queue().clone())?;
+			ImmutableBuffer::from_data(position, BufferUsage::uniform_buffer(), window.queue().clone())?;
 
 		Ok((
 			Self {

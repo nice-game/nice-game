@@ -51,7 +51,8 @@ impl MeshBatch {
 
 	pub fn commands(
 		&mut self,
-		target: &mut RenderTarget,
+		window: &Window,
+		target: &RenderTarget,
 		image_num: usize,
 	) -> Result<AutoCommandBuffer, DeviceMemoryAllocError> {
 		assert!(self.target_id.is_child_of(target.id_root()));
@@ -82,7 +83,7 @@ impl MeshBatch {
 		let dimensions = [framebuffer.width() as f32, framebuffer.height() as f32];
 
 		let mut command_buffer =
-			AutoCommandBufferBuilder::primary_one_time_submit(self.shared.shaders.device.clone(), target.queue().family())?
+			AutoCommandBufferBuilder::primary_one_time_submit(self.shared.shaders.device.clone(), window.queue().family())?
 				.begin_render_pass(framebuffer, true, vec![[0.1, 0.1, 0.1, 1.0].into()])
 				.unwrap();
 
@@ -90,7 +91,7 @@ impl MeshBatch {
 			command_buffer =
 				unsafe {
 					command_buffer
-						.execute_commands(mesh.make_commands(&self.shared, target.queue().family(), dimensions)?)
+						.execute_commands(mesh.make_commands(&self.shared, window.queue().family(), dimensions)?)
 						.unwrap()
 				};
 		}
@@ -192,7 +193,7 @@ pub struct Mesh {
 }
 impl Mesh {
 	pub fn new<D>(
-		target: &mut RenderTarget,
+		window: &Window,
 		vertices: D,
 		position: [f32; 2],
 	) -> Result<(Self, impl GpuFuture), DeviceMemoryAllocError>
@@ -200,10 +201,10 @@ impl Mesh {
 		D: ExactSizeIterator<Item = MeshVertex>,
 	{
 		let (vertices, vertices_future) =
-			ImmutableBuffer::from_iter(vertices, BufferUsage::vertex_buffer(), target.queue().clone())?;
+			ImmutableBuffer::from_iter(vertices, BufferUsage::vertex_buffer(), window.queue().clone())?;
 
 		let (position, position_future) =
-			ImmutableBuffer::from_data(position, BufferUsage::uniform_buffer(), target.queue().clone())?;
+			ImmutableBuffer::from_data(position, BufferUsage::uniform_buffer(), window.queue().clone())?;
 
 		Ok((Self { position: position, vertices: vertices }, vertices_future.join(position_future)))
 	}

@@ -43,7 +43,7 @@ fn main() {
 		).unwrap();
 	let (sprite, sprite_future) = Sprite::new(&mut window, &sprite_batch_shared, &texture, [10.0, 10.0]).unwrap();
 
-	let (mut sprite_batch, sprite_batch_future) = SpriteBatch::new(&mut window, sprite_batch_shared).unwrap();
+	let (mut sprite_batch, sprite_batch_future) = SpriteBatch::new(&window, &window, sprite_batch_shared).unwrap();
 	sprite_batch.add_sprite(sprite);
 
 	window.join_future(shaders_future.join(sprite_future).join(sprite_batch_future));
@@ -61,7 +61,7 @@ fn main() {
 
 		window
 			.present(|window, image_num, mut future| {
-				let (commands, commands_future) = sprite_batch.commands(window, image_num).unwrap();
+				let (commands, commands_future) = sprite_batch.commands(window, window, image_num).unwrap();
 				if let Some(commands_future) = commands_future {
 					future = Box::new(future.join(commands_future));
 				}

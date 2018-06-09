@@ -24,7 +24,6 @@ pub use vulkano::{ command_buffer::CommandBuffer, instance::Version, sync::GpuFu
 use cpu_pool::CpuPool;
 use std::{ cmp::min, sync::{ Arc, Mutex, Weak } };
 use vulkano::{
-	device::Queue,
 	format::Format,
 	framebuffer::FramebufferAbstract,
 	image::ImageViewAccess,
@@ -109,5 +108,4 @@ pub trait RenderTarget {
 	fn format(&self) -> Format;
 	fn id_root(&self) -> &ObjectIdRoot;
 	fn images(&self) -> &[Arc<ImageViewAccess + Send + Sync + 'static>];
-	fn queue(&self) -> &Arc<Queue>;
 }

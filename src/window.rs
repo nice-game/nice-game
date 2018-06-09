@@ -191,7 +191,7 @@ impl Window {
 		&self.device
 	}
 
-	pub(super) fn queue(&self) -> &Arc<Queue> {
+	pub fn queue(&self) -> &Arc<Queue> {
 		&self.queue
 	}
 }
@@ -206,9 +206,5 @@ impl RenderTarget for Window {
 
 	fn images(&self) -> &[Arc<ImageViewAccess + Send + Sync + 'static>] {
 		&self.images
-	}
-
-	fn queue(&self) -> &Arc<Queue> {
-		&self.queue
 	}
 }

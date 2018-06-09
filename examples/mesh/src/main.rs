@@ -60,7 +60,8 @@ fn main() {
 
 		window
 			.present(|window, image_num, future| {
-				future.then_execute(window.queue().clone(), mesh_batch.commands(window, image_num).unwrap()).unwrap()
+				future.then_execute(window.queue().clone(), mesh_batch.commands(window, window, image_num).unwrap())
+					.unwrap()
 			})
 			.unwrap();
 	}
