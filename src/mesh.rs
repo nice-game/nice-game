@@ -345,13 +345,13 @@ mod vs {
 	#[src = "#version 450
 
 layout(location = 0) in vec3 position;
-layout(location = 0) out vec2 color;
+layout(location = 0) out vec3 color;
 
-layout(set = 0, binding = 0) uniform CameraPos { vec3 pos; } camera_pos;
-layout(set = 0, binding = 1) uniform CameraRot { vec4 rot; } camera_rot;
-layout(set = 0, binding = 2) uniform CameraProj { vec4 proj; } camera_proj;
+layout(set = 0, binding = 0) uniform CameraPos { vec3 camera_pos; };
+layout(set = 0, binding = 1) uniform CameraRot { vec4 camera_rot; };
+layout(set = 0, binding = 2) uniform CameraProj { vec4 camera_proj; };
 
-layout(set = 1, binding = 0) uniform MeshDynamic { vec3 pos; } mesh;
+layout(set = 1, binding = 0) uniform MeshDynamic { vec3 mesh_pos; };
 
 vec4 quat_inv(vec4 quat) {
 	return vec4(-quat.xyz, quat.w) / dot(quat, quat);
@@ -382,8 +382,8 @@ vec3 inv_perspective(vec4 proj, vec3 pos) {
 }
 
 void main() {
-	color = position.xy;
-	gl_Position = perspective(quat_mul(quat_inv(camera_rot.rot), position - camera_pos.pos), camera_proj.proj);
+	color = position;
+	gl_Position = perspective(quat_mul(quat_inv(camera_rot), position + mesh_pos - camera_pos), camera_proj);
 }"]
 	struct Dummy;
 }
@@ -394,11 +394,11 @@ mod fs {
 	#[ty = "fragment"]
 	#[src = "#version 450
 
-layout(location = 0) in vec2 color;
+layout(location = 0) in vec3 color;
 layout(location = 0) out vec4 f_color;
 
 void main() {
-	f_color = vec4(color, 1, 1);
+	f_color = vec4(color, 1);
 }"]
 	struct Dummy;
 }
