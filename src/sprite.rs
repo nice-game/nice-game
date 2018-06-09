@@ -6,7 +6,7 @@ use vulkano::{
 	buffer::{ BufferUsage, ImmutableBuffer },
 	command_buffer::{ AutoCommandBuffer, AutoCommandBufferBuilder, BuildError, DynamicState },
 	descriptor::{ DescriptorSet, descriptor_set::{ FixedSizeDescriptorSetsPool, PersistentDescriptorSet } },
-	device::Device,
+	device::{ Device, Queue },
 	format::Format,
 	framebuffer::{ Framebuffer, FramebufferAbstract, FramebufferCreationError, RenderPassAbstract, Subpass },
 	image::ImageViewAccess,
@@ -29,7 +29,7 @@ impl SpriteBatch {
 	pub fn new(target: &mut RenderTarget, shared: Arc<SpriteBatchShared>) -> Result<(Self, impl GpuFuture), DeviceMemoryAllocError> {
 		let dimensions = target.images()[0].dimensions();
 		let (target_descs, future) =
-			Self::make_target_desc(target, &shared, dimensions.width() as f32, dimensions.height() as f32)?;
+			Self::make_target_desc(target.queue().clone(), &shared, dimensions.width(), dimensions.height())?;
 
 		Ok((
 			Self {
@@ -48,13 +48,13 @@ impl SpriteBatch {
 	}
 
 	fn make_target_desc(
-		target: &mut RenderTarget,
+		queue: Arc<Queue>,
 		shared: &SpriteBatchShared,
-		width: f32,
-		height: f32
+		width: u32,
+		height: u32
 	) -> Result<(Arc<DescriptorSet + Send + Sync + 'static>, impl GpuFuture), DeviceMemoryAllocError> {
 		let (target_size, future) =
-			ImmutableBuffer::from_data([width, height], BufferUsage::uniform_buffer(), target.queue().clone())?;
+			ImmutableBuffer::from_data([width, height], BufferUsage::uniform_buffer(), queue)?;
 
 		Ok((
 			Arc::new(
@@ -70,7 +70,7 @@ impl SpriteBatch {
 
 	pub fn commands(
 		&mut self,
-		target: &mut RenderTarget,
+		target: &RenderTarget,
 		image_num: usize,
 	) -> Result<(AutoCommandBuffer, Option<impl GpuFuture>), DeviceMemoryAllocError> {
 		assert!(self.target_id.is_child_of(target.id_root()));
@@ -98,10 +98,10 @@ impl SpriteBatch {
 
 				let (target_desc, future) =
 					Self::make_target_desc(
-						target,
+						target.queue().clone(),
 						&self.shared,
-						framebuffer.width() as f32,
-						framebuffer.height() as f32
+						framebuffer.width(),
+						framebuffer.height()
 					)?;
 
 				self.target_desc = target_desc;
@@ -121,7 +121,7 @@ impl SpriteBatch {
 				unsafe {
 					command_buffer
 						.execute_commands(
-							mesh.make_commands(&self.shared, &self.target_desc, target.queue().family(), dimensions,)?
+							mesh.make_commands(&self.shared, &self.target_desc, target.queue().family(), dimensions)?
 						)
 						.unwrap()
 				};
@@ -329,7 +329,7 @@ layout(location = 0) in vec2 position;
 layout(location = 0) out vec2 tex_coords;
 
 layout(set = 0, binding = 0) uniform Target {
-	vec2 size;
+	uvec2 size;
 } target;
 
 layout(set = 1, binding = 0) uniform SpriteDynamic {
