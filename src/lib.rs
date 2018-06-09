@@ -24,12 +24,10 @@ pub use vulkano::{ instance::Version, sync::GpuFuture };
 use cpu_pool::CpuPool;
 use std::{ cmp::min, sync::{ Arc, Mutex, Weak } };
 use vulkano::{
-	command_buffer::AutoCommandBuffer,
 	device::Queue,
 	format::Format,
 	image::ImageViewAccess,
 	instance::{ ApplicationInfo, Instance, InstanceCreationError },
-	memory::DeviceMemoryAllocError,
 };
 
 lazy_static! {
@@ -100,12 +98,4 @@ pub trait RenderTarget {
 	fn join_future(&mut self, other: Box<GpuFuture>);
 	fn take_future(&mut self) -> Option<Box<GpuFuture>>;
 	fn queue(&self) -> &Arc<Queue>;
-}
-
-pub trait Drawable {
-	fn commands(
-		&mut self,
-		target: &mut RenderTarget,
-		image_num: usize,
-	) -> Result<AutoCommandBuffer, DeviceMemoryAllocError>;
 }
