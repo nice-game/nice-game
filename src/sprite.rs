@@ -5,7 +5,11 @@ use vulkano::{
 	OomError,
 	buffer::{ BufferUsage, ImmutableBuffer },
 	command_buffer::{ AutoCommandBuffer, AutoCommandBufferBuilder, BuildError, DynamicState },
-	descriptor::{ DescriptorSet, descriptor_set::{ FixedSizeDescriptorSetsPool, PersistentDescriptorSet } },
+	descriptor::{
+		DescriptorSet,
+		PipelineLayoutAbstract,
+		descriptor_set::{ FixedSizeDescriptorSetsPool, PersistentDescriptorSet }
+	},
 	device::{ Device, Queue },
 	format::Format,
 	framebuffer::{ Framebuffer, FramebufferAbstract, FramebufferCreationError, RenderPassAbstract, Subpass },
@@ -32,7 +36,12 @@ impl SpriteBatch {
 	) -> Result<(Self, impl GpuFuture), DeviceMemoryAllocError> {
 		let dimensions = target.images()[0].dimensions();
 		let (target_descs, future) =
-			Self::make_target_desc(window.queue().clone(), &shared, dimensions.width(), dimensions.height())?;
+			Self::make_target_desc(
+				window.queue().clone(),
+				shared.pipeline.clone(),
+				dimensions.width(),
+				dimensions.height()
+			)?;
 
 		let framebuffers =
 			target.images().iter()
@@ -66,16 +75,15 @@ impl SpriteBatch {
 
 	fn make_target_desc(
 		queue: Arc<Queue>,
-		shared: &SpriteBatchShared,
+		pipeline: impl PipelineLayoutAbstract + Send + Sync + 'static,
 		width: u32,
 		height: u32
 	) -> Result<(Arc<DescriptorSet + Send + Sync + 'static>, impl GpuFuture), DeviceMemoryAllocError> {
-		let (target_size, future) =
-			ImmutableBuffer::from_data([width, height], BufferUsage::uniform_buffer(), queue)?;
+		let (target_size, future) = ImmutableBuffer::from_data([width, height], BufferUsage::uniform_buffer(), queue)?;
 
 		Ok((
 			Arc::new(
-				PersistentDescriptorSet::start(shared.pipeline.clone(), 0)
+				PersistentDescriptorSet::start(pipeline, 0)
 					.add_buffer(target_size.clone())
 					.unwrap()
 					.build()
@@ -116,7 +124,7 @@ impl SpriteBatch {
 				let (target_desc, future) =
 					Self::make_target_desc(
 						window.queue().clone(),
-						&self.shared,
+						self.shared.pipeline.clone(),
 						framebuffer.width(),
 						framebuffer.height()
 					)?;

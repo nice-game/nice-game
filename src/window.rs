@@ -146,12 +146,11 @@ impl Window {
 						self.resized.store(true, Ordering::Relaxed);
 						return Ok(());
 					},
-					Err(err) => panic!("{:?}", err),
+					Err(err) => unreachable!(err),
 				};
-			let images = images.into_iter().map(|x| x as _).collect();
 
 			self.swapchain = swapchain;
-			self.images = images;
+			self.images = images.into_iter().map(|x| x as _).collect();
 		}
 
 		let (image_num, acquire_future) =
@@ -161,7 +160,7 @@ impl Window {
 					self.resized.store(true, Ordering::Relaxed);
 					return Ok(());
 				},
-				Err(err) => panic!("{:?}", err)
+				Err(err) => unreachable!(err)
 			};
 
 		let mut future: Box<GpuFuture> =
@@ -181,7 +180,7 @@ impl Window {
 					self.resized.store(true, Ordering::Relaxed);
 					return Ok(());
 				},
-				Err(err) => panic!(err),
+				Err(err) => unreachable!(err),
 			};
 
 		Ok(())
