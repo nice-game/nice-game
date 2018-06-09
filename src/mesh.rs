@@ -9,6 +9,7 @@ use vulkano::{
 	device::Device,
 	format::Format,
 	framebuffer::{ Framebuffer, FramebufferAbstract, FramebufferCreationError, RenderPassAbstract, Subpass },
+	image::{ AttachmentImage, ImageCreationError, ImageViewAccess },
 	instance::QueueFamily,
 	memory::{ DeviceMemoryAllocError, pool::StdMemoryPool },
 	pipeline::{ GraphicsPipeline, GraphicsPipelineAbstract, viewport::Viewport },
@@ -16,40 +17,73 @@ use vulkano::{
 	sync::GpuFuture,
 };
 
+const NORMAL_FORMAT: Format = Format::R32G32B32A32Sfloat;
+const DEPTH_FORMAT: Format = Format::D16Unorm;
+
 pub struct MeshBatch {
 	shared: Arc<MeshBatchShared>,
 	meshes: Vec<Mesh>,
-	framebuffers: Vec<ImageFramebuffer>,
+	//framebuffers: Vec<ImageFramebuffer>,
 	target_id: ObjectId,
 	camera_desc_pool: FixedSizeDescriptorSetsPool<Arc<GraphicsPipelineAbstract + Send + Sync + 'static>>,
 	mesh_desc_pool: FixedSizeDescriptorSetsPool<Arc<GraphicsPipelineAbstract + Send + Sync + 'static>>,
+	framebuffer_gbuffers: Arc<FramebufferAbstract + Send + Sync + 'static>,
 }
 impl MeshBatch {
-	pub fn new(target: &mut RenderTarget, shared: Arc<MeshBatchShared>) -> Result<Self, DeviceMemoryAllocError> {
-		let framebuffers =
-			target.images().iter()
-				.map(|image| {
-					Framebuffer::start(shared.subpass.render_pass().clone())
-						.add(image.clone())
-						.and_then(|fb| fb.build())
-						.map(|fb| ImageFramebuffer::new(Arc::downgrade(&image), Arc::new(fb)))
-						.map_err(|err| match err {
-							FramebufferCreationError::OomError(err) => err,
-							err => unreachable!("{:?}", err),
-						})
-				})
-				.collect::<Result<Vec<_>, _>>()?;
+	pub fn new(
+		window: &Window,
+		target: &RenderTarget,
+		shared: Arc<MeshBatchShared>
+	) -> Result<Self, DeviceMemoryAllocError> {
+		// let framebuffers =
+		// 	target.images().iter()
+		// 		.map(|image| {
+		// 			Framebuffer::start(shared.subpass.render_pass().clone())
+		// 				.add(image.clone())
+		// 				.and_then(|fb| fb.build())
+		// 				.map(|fb| ImageFramebuffer::new(Arc::downgrade(&image), Arc::new(fb)))
+		// 				.map_err(|err| match err {
+		// 					FramebufferCreationError::OomError(err) => err,
+		// 					err => unreachable!("{:?}", err),
+		// 				})
+		// 		})
+		// 		.collect::<Result<Vec<_>, _>>()?;
 
 		let camera_desc_pool = FixedSizeDescriptorSetsPool::new(shared.pipeline.clone(), 0);
 		let mesh_desc_pool = FixedSizeDescriptorSetsPool::new(shared.pipeline.clone(), 1);
 
+		let dimensions = target.images()[0].dimensions().width_height();
+		let image_color =
+			AttachmentImage::sampled(window.device().clone(), dimensions, window.format())
+				.map_err(|err| match err { ImageCreationError::AllocError(err) => err, err => unreachable!(err) })?;
+		let image_normal =
+			AttachmentImage::sampled(window.device().clone(), dimensions, NORMAL_FORMAT)
+				.map_err(|err| match err { ImageCreationError::AllocError(err) => err, err => unreachable!(err) })?;
+		let image_depth =
+			AttachmentImage::sampled(window.device().clone(), dimensions, DEPTH_FORMAT)
+				.map_err(|err| match err { ImageCreationError::AllocError(err) => err, err => unreachable!(err) })?;
+
+		let framebuffer_gbuffers =
+			Arc::new(
+				Framebuffer::start(shared.subpass.render_pass().clone())
+					.add(image_color.clone())
+					.and_then(|fb| fb.add(image_normal.clone()))
+					.and_then(|fb| fb.add(image_depth.clone()))
+					.and_then(|fb| fb.build())
+					.map_err(|err| match err {
+						FramebufferCreationError::OomError(err) => err,
+						err => unreachable!("{:?}", err),
+					})?
+			);
+
 		Ok(Self {
 			shared: shared,
 			meshes: vec![],
-			framebuffers: framebuffers,
+			//framebuffers: framebuffers,
 			target_id: target.id_root().make_id(),
 			camera_desc_pool: camera_desc_pool,
 			mesh_desc_pool: mesh_desc_pool,
+			framebuffer_gbuffers: framebuffer_gbuffers,
 		})
 	}
 
@@ -66,35 +100,30 @@ impl MeshBatch {
 	) -> Result<AutoCommandBuffer, DeviceMemoryAllocError> {
 		assert!(self.target_id.is_child_of(target.id_root()));
 
-		let framebuffer = self.framebuffers[image_num].image
-			.upgrade()
-			.iter()
-			.filter(|old_image| Arc::ptr_eq(&target.images()[image_num], &old_image))
-			.next()
-			.map(|_| self.framebuffers[image_num].framebuffer.clone());
-		let framebuffer =
-			if let Some(framebuffer) = framebuffer.as_ref() {
-				framebuffer.clone()
-			} else {
-				let framebuffer = Framebuffer::start(self.shared.subpass.render_pass().clone())
-					.add(target.images()[image_num].clone())
-					.and_then(|fb| fb.build())
-					.map(|fb| Arc::new(fb))
-					.map_err(|err| {
-						match err { FramebufferCreationError::OomError(err) => err, err => unreachable!("{:?}", err) }
-					})?;
-				self.framebuffers[image_num] =
-					ImageFramebuffer::new(Arc::downgrade(&target.images()[image_num]), framebuffer.clone());
+		// let framebuffer = self.framebuffers[image_num].image
+		// 	.upgrade()
+		// 	.iter()
+		// 	.filter(|old_image| Arc::ptr_eq(&target.images()[image_num], &old_image))
+		// 	.next()
+		// 	.map(|_| self.framebuffers[image_num].framebuffer.clone());
+		// let framebuffer =
+		// 	if let Some(framebuffer) = framebuffer.as_ref() {
+		// 		framebuffer.clone()
+		// 	} else {
+		// 		let framebuffer = Framebuffer::start(self.shared.subpass.render_pass().clone())
+		// 			.add(target.images()[image_num].clone())
+		// 			.and_then(|fb| fb.build())
+		// 			.map(|fb| Arc::new(fb))
+		// 			.map_err(|err| {
+		// 				match err { FramebufferCreationError::OomError(err) => err, err => unreachable!("{:?}", err) }
+		// 			})?;
+		// 		self.framebuffers[image_num] =
+		// 			ImageFramebuffer::new(Arc::downgrade(&target.images()[image_num]), framebuffer.clone());
 
-				framebuffer
-			};
+		// 		framebuffer
+		// 	};
 
-		let dimensions = [framebuffer.width() as f32, framebuffer.height() as f32];
-
-		let mut command_buffer =
-			AutoCommandBufferBuilder::primary_one_time_submit(self.shared.shaders.device.clone(), window.queue().family())?
-				.begin_render_pass(framebuffer, true, vec![[0.1, 0.1, 0.1, 1.0].into()])
-				.unwrap();
+		let dimensions = [self.framebuffer_gbuffers.width() as f32, self.framebuffer_gbuffers.height() as f32];
 
 		let camera_desc =
 			Arc::new(
@@ -108,6 +137,15 @@ impl MeshBatch {
 					.build()
 					.unwrap()
 			);
+
+		let mut command_buffer =
+			AutoCommandBufferBuilder::primary_one_time_submit(self.shared.shaders.device.clone(), window.queue().family())?
+				.begin_render_pass(
+					self.framebuffer_gbuffers.clone(),
+					true,
+					vec![[0.1, 0.1, 0.1, 1.0].into(), [0.0; 4].into(), 1.0.into()]
+				)
+				.unwrap();
 
 		for mesh in &mut self.meshes {
 			command_buffer =
@@ -146,8 +184,12 @@ impl MeshBatchShared {
 				Arc::new(
 					single_pass_renderpass!(
 						shaders.device.clone(),
-						attachments: { color: { load: Clear, store: Store, format: format, samples: 1, } },
-						pass: { color: [color], depth_stencil: {} }
+						attachments: {
+							color: { load: Clear, store: Store, format: format, samples: 1, },
+							normal: { load: Clear, store: Store, format: NORMAL_FORMAT, samples: 1, },
+							depth: { load: Clear, store: Store, format: DEPTH_FORMAT, samples: 1, }
+						},
+						pass: { color: [color, normal], depth_stencil: {depth} }
 					).expect("failed to create render pass")
 				) as Arc<RenderPassAbstract + Send + Sync>,
 				0
@@ -335,8 +377,11 @@ impl Camera {
 }
 
 #[derive(Debug, Clone)]
-pub struct MeshVertex { pub position: [f32; 3] }
-impl_vertex!(MeshVertex, position);
+pub struct MeshVertex {
+	pub position: [f32; 3],
+	pub normal: [f32; 3],
+}
+impl_vertex!(MeshVertex, position, normal);
 
 mod vs {
 	#[allow(dead_code)]
@@ -345,7 +390,8 @@ mod vs {
 	#[src = "#version 450
 
 layout(location = 0) in vec3 position;
-layout(location = 0) out vec3 color;
+layout(location = 1) in vec3 normal;
+layout(location = 0) out vec3 out_normal;
 
 layout(set = 0, binding = 0) uniform CameraPos { vec3 camera_pos; };
 layout(set = 0, binding = 1) uniform CameraRot { vec4 camera_rot; };
@@ -382,7 +428,7 @@ vec3 inv_perspective(vec4 proj, vec3 pos) {
 }
 
 void main() {
-	color = position;
+	out_normal = quat_mul(quat_inv(camera_rot), normal);
 	gl_Position = perspective(quat_mul(quat_inv(camera_rot), position + mesh_pos - camera_pos), camera_proj);
 }"]
 	struct Dummy;
@@ -394,11 +440,13 @@ mod fs {
 	#[ty = "fragment"]
 	#[src = "#version 450
 
-layout(location = 0) in vec3 color;
-layout(location = 0) out vec4 f_color;
+layout(location = 0) in vec3 normal;
+layout(location = 0) out vec4 out_color;
+layout(location = 1) out vec4 out_normal;
 
 void main() {
-	f_color = vec4(color, 1);
+	out_color = vec4(1);
+	out_normal = vec4(normal, 1);
 }"]
 	struct Dummy;
 }

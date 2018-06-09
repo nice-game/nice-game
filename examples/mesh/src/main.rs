@@ -32,19 +32,19 @@ fn main() {
 	let mesh_batch_shared = MeshBatchShared::new(MeshBatchShaders::new(&mut window).unwrap(), window.format());
 
 	let (mesh, mesh_future) = Mesh::new(
-		&mut window,
+		&window,
 		vec![
-			MeshVertex { position: [-0.5, -0.5, 0.0] },
-			MeshVertex { position: [0.5, -0.5, 0.0] },
-			MeshVertex { position: [-0.5, 0.5, 0.0] },
-			MeshVertex { position: [-0.5, 0.5, 0.0] },
-			MeshVertex { position: [0.5, -0.5, 0.0] },
-			MeshVertex { position: [0.5, 0.5, 0.0] },
+			MeshVertex { position: [-1.0, -1.0, 0.0], normal:  [0.0, 0.0, -1.0] },
+			MeshVertex { position: [1.0, -1.0, 0.0], normal:  [0.0, 0.0, -1.0] },
+			MeshVertex { position: [-1.0, 1.0, 0.0], normal:  [0.0, 0.0, -1.0] },
+			MeshVertex { position: [-1.0, 1.0, 0.0], normal:  [0.0, 0.0, -1.0] },
+			MeshVertex { position: [1.0, -1.0, 0.0], normal:  [0.0, 0.0, -1.0] },
+			MeshVertex { position: [1.0, 1.0, 0.0], normal:  [0.0, 0.0, -1.0] },
 		].into_iter(),
 		[0.0, 0.0, 2.0]
 	).unwrap();
 
-	let mut mesh_batch = MeshBatch::new(&mut window, mesh_batch_shared).unwrap();
+	let mut mesh_batch = MeshBatch::new(&window, &window, mesh_batch_shared).unwrap();
 	mesh_batch.add_mesh(mesh);
 
 	let [width, height] = window.images()[0].dimensions().width_height();
