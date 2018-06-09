@@ -1,6 +1,6 @@
-use { ObjectId, RenderTarget, window::Window };
+use { ImageFramebuffer, ObjectId, RenderTarget, window::Window };
 use texture::Texture;
-use std::sync::{ Arc, Mutex, Weak };
+use std::sync::{ Arc, Mutex };
 use vulkano::{
 	OomError,
 	buffer::{ BufferUsage, ImmutableBuffer },
@@ -20,8 +20,7 @@ use vulkano::{
 pub struct SpriteBatch {
 	shared: Arc<SpriteBatchShared>,
 	meshes: Vec<Sprite>,
-	framebuffers:
-		Vec<(Weak<ImageViewAccess + Send + Sync + 'static>, Arc<FramebufferAbstract + Send + Sync + 'static>)>,
+	framebuffers: Vec<ImageFramebuffer>,
 	target_id: ObjectId,
 	target_desc: Arc<DescriptorSet + Send + Sync + 'static>,
 }
@@ -40,7 +39,7 @@ impl SpriteBatch {
 					Framebuffer::start(shared.subpass.render_pass().clone())
 						.add(image.clone())
 						.and_then(|fb| fb.build())
-						.map(|fb| (Arc::downgrade(&image), Arc::new(fb) as _))
+						.map(|fb| ImageFramebuffer::new(Arc::downgrade(&image), Arc::new(fb)))
 						.map_err(|err| match err {
 							FramebufferCreationError::OomError(err) => err,
 							err => unreachable!("{:?}", err),
@@ -92,15 +91,15 @@ impl SpriteBatch {
 	) -> Result<(AutoCommandBuffer, Option<impl GpuFuture>), DeviceMemoryAllocError> {
 		assert!(self.target_id.is_child_of(target.id_root()));
 
-		let framebuffer = self.framebuffers[image_num].0
+		let framebuffer = self.framebuffers[image_num].image
 			.upgrade()
 			.iter()
 			.filter(|old_image| Arc::ptr_eq(&target.images()[image_num], &old_image))
 			.next()
-			.map(|_| self.framebuffers[image_num].1.clone());
+			.map(|_| self.framebuffers[image_num].framebuffer.clone());
 		let (framebuffer, future) =
-			if let Some(framebuffer) = framebuffer.as_ref() {
-				(framebuffer.clone(), None)
+			if let Some(framebuffer) = framebuffer {
+				(framebuffer, None)
 			} else {
 				let framebuffer = Framebuffer::start(self.shared.subpass.render_pass().clone())
 					.add(target.images()[image_num].clone())
@@ -109,7 +108,8 @@ impl SpriteBatch {
 					.map_err(|err| {
 						match err { FramebufferCreationError::OomError(err) => err, err => unreachable!("{:?}", err) }
 					})?;
-				self.framebuffers[image_num] = (Arc::downgrade(&target.images()[image_num]), framebuffer.clone());
+				self.framebuffers[image_num] =
+					ImageFramebuffer::new(Arc::downgrade(&target.images()[image_num]), framebuffer.clone());
 
 				let (target_desc, future) =
 					Self::make_target_desc(

@@ -1,5 +1,5 @@
-use { ObjectId, RenderTarget, window::Window };
-use std::sync::{ Arc, Mutex, Weak };
+use { ImageFramebuffer, ObjectId, RenderTarget, window::Window };
+use std::sync::{ Arc, Mutex };
 use vulkano::{
 	OomError,
 	buffer::{ BufferUsage, ImmutableBuffer },
@@ -8,7 +8,6 @@ use vulkano::{
 	device::Device,
 	format::Format,
 	framebuffer::{ Framebuffer, FramebufferAbstract, FramebufferCreationError, RenderPassAbstract, Subpass },
-	image::ImageViewAccess,
 	instance::QueueFamily,
 	memory::DeviceMemoryAllocError,
 	pipeline::{ GraphicsPipeline, GraphicsPipelineAbstract, viewport::Viewport },
@@ -19,16 +18,29 @@ use vulkano::{
 pub struct MeshBatch {
 	shared: Arc<MeshBatchShared>,
 	meshes: Vec<Mesh>,
-	framebuffers:
-		Vec<Option<(Weak<ImageViewAccess + Send + Sync + 'static>, Arc<FramebufferAbstract + Send + Sync + 'static>)>>,
+	framebuffers: Vec<ImageFramebuffer>,
 	target_id: ObjectId,
 }
 impl MeshBatch {
 	pub fn new(target: &mut RenderTarget, shared: Arc<MeshBatchShared>) -> Result<Self, DeviceMemoryAllocError> {
+		let framebuffers =
+			target.images().iter()
+				.map(|image| {
+					Framebuffer::start(shared.subpass.render_pass().clone())
+						.add(image.clone())
+						.and_then(|fb| fb.build())
+						.map(|fb| ImageFramebuffer::new(Arc::downgrade(&image), Arc::new(fb)))
+						.map_err(|err| match err {
+							FramebufferCreationError::OomError(err) => err,
+							err => unreachable!("{:?}", err),
+						})
+				})
+				.collect::<Result<Vec<_>, _>>()?;
+
 		Ok(Self {
 			shared: shared,
 			meshes: vec![],
-			framebuffers: vec![None; target.images().len()],
+			framebuffers: framebuffers,
 			target_id: target.id_root().make_id(),
 		})
 	}
@@ -44,14 +56,12 @@ impl MeshBatch {
 	) -> Result<AutoCommandBuffer, DeviceMemoryAllocError> {
 		assert!(self.target_id.is_child_of(target.id_root()));
 
-		let framebuffer = self.framebuffers[image_num].as_ref()
-			.and_then(|(old_image, fb)| {
-				old_image.upgrade()
-					.iter()
-					.filter(|old_image| Arc::ptr_eq(&target.images()[image_num], &old_image))
-					.next()
-					.map(|_| fb.clone())
-			});
+		let framebuffer = self.framebuffers[image_num].image
+			.upgrade()
+			.iter()
+			.filter(|old_image| Arc::ptr_eq(&target.images()[image_num], &old_image))
+			.next()
+			.map(|_| self.framebuffers[image_num].framebuffer.clone());
 		let framebuffer =
 			if let Some(framebuffer) = framebuffer.as_ref() {
 				framebuffer.clone()
@@ -63,7 +73,8 @@ impl MeshBatch {
 					.map_err(|err| {
 						match err { FramebufferCreationError::OomError(err) => err, err => unreachable!("{:?}", err) }
 					})?;
-				self.framebuffers[image_num] = Some((Arc::downgrade(&target.images()[image_num]), framebuffer.clone()));
+				self.framebuffers[image_num] =
+					ImageFramebuffer::new(Arc::downgrade(&target.images()[image_num]), framebuffer.clone());
 
 				framebuffer
 			};

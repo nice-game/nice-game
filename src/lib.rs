@@ -26,6 +26,7 @@ use std::{ cmp::min, sync::{ Arc, Mutex, Weak } };
 use vulkano::{
 	device::Queue,
 	format::Format,
+	framebuffer::FramebufferAbstract,
 	image::ImageViewAccess,
 	instance::{ ApplicationInfo, Instance, InstanceCreationError },
 };
@@ -88,6 +89,19 @@ impl ObjectIdRoot {
 
 	pub fn make_id(&self) -> ObjectId {
 		ObjectId { val: Arc::downgrade(&self.val) }
+	}
+}
+
+struct ImageFramebuffer {
+	image: Weak<ImageViewAccess + Send + Sync + 'static>,
+	framebuffer: Arc<FramebufferAbstract + Send + Sync + 'static>,
+}
+impl ImageFramebuffer {
+	fn new(
+		image: Weak<ImageViewAccess + Send + Sync + 'static>,
+		framebuffer: Arc<FramebufferAbstract + Send + Sync + 'static>,
+	) -> Self {
+		Self { image: image, framebuffer: framebuffer }
 	}
 }
 
