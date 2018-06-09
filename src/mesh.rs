@@ -5,7 +5,7 @@ use vulkano::{
 	OomError,
 	buffer::{ BufferUsage, CpuBufferPool, ImmutableBuffer, cpu_pool::CpuBufferPoolSubbuffer },
 	command_buffer::{ AutoCommandBuffer, AutoCommandBufferBuilder, BuildError, DynamicState },
-	descriptor::{ DescriptorSet, descriptor_set::FixedSizeDescriptorSetsPool },
+	descriptor::{ DescriptorSet, descriptor_set::{ FixedSizeDescriptorSetsPool, PersistentDescriptorSet } },
 	device::Device,
 	format::Format,
 	framebuffer::{ Framebuffer, FramebufferAbstract, FramebufferCreationError, RenderPassAbstract, Subpass },
@@ -13,7 +13,7 @@ use vulkano::{
 	instance::QueueFamily,
 	memory::{ DeviceMemoryAllocError, pool::StdMemoryPool },
 	pipeline::{ GraphicsPipeline, GraphicsPipelineAbstract, viewport::Viewport },
-	sampler::SamplerCreationError,
+	sampler::{ Filter, MipmapMode, Sampler, SamplerAddressMode, SamplerCreationError },
 	sync::GpuFuture,
 };
 
@@ -23,11 +23,14 @@ const DEPTH_FORMAT: Format = Format::D16Unorm;
 pub struct MeshBatch {
 	shared: Arc<MeshBatchShared>,
 	meshes: Vec<Mesh>,
-	//framebuffers: Vec<ImageFramebuffer>,
+	framebuffers: Vec<ImageFramebuffer>,
 	target_id: ObjectId,
+	image_color: Arc<AttachmentImage>,
+	image_normal: Arc<AttachmentImage>,
+	image_depth: Arc<AttachmentImage>,
+	desc_target: Arc<DescriptorSet + Send + Sync + 'static>,
 	camera_desc_pool: FixedSizeDescriptorSetsPool<Arc<GraphicsPipelineAbstract + Send + Sync + 'static>>,
 	mesh_desc_pool: FixedSizeDescriptorSetsPool<Arc<GraphicsPipelineAbstract + Send + Sync + 'static>>,
-	framebuffer_gbuffers: Arc<FramebufferAbstract + Send + Sync + 'static>,
 }
 impl MeshBatch {
 	pub fn new(
@@ -35,55 +38,59 @@ impl MeshBatch {
 		target: &RenderTarget,
 		shared: Arc<MeshBatchShared>
 	) -> Result<Self, DeviceMemoryAllocError> {
-		// let framebuffers =
-		// 	target.images().iter()
-		// 		.map(|image| {
-		// 			Framebuffer::start(shared.subpass.render_pass().clone())
-		// 				.add(image.clone())
-		// 				.and_then(|fb| fb.build())
-		// 				.map(|fb| ImageFramebuffer::new(Arc::downgrade(&image), Arc::new(fb)))
-		// 				.map_err(|err| match err {
-		// 					FramebufferCreationError::OomError(err) => err,
-		// 					err => unreachable!("{:?}", err),
-		// 				})
-		// 		})
-		// 		.collect::<Result<Vec<_>, _>>()?;
-
-		let camera_desc_pool = FixedSizeDescriptorSetsPool::new(shared.pipeline.clone(), 0);
-		let mesh_desc_pool = FixedSizeDescriptorSetsPool::new(shared.pipeline.clone(), 1);
-
 		let dimensions = target.images()[0].dimensions().width_height();
 		let image_color =
-			AttachmentImage::sampled(window.device().clone(), dimensions, window.format())
+			AttachmentImage::transient_input_attachment(window.device().clone(), dimensions, window.format())
 				.map_err(|err| match err { ImageCreationError::AllocError(err) => err, err => unreachable!(err) })?;
 		let image_normal =
-			AttachmentImage::sampled(window.device().clone(), dimensions, NORMAL_FORMAT)
+			AttachmentImage::transient_input_attachment(window.device().clone(), dimensions, NORMAL_FORMAT)
 				.map_err(|err| match err { ImageCreationError::AllocError(err) => err, err => unreachable!(err) })?;
 		let image_depth =
-			AttachmentImage::sampled(window.device().clone(), dimensions, DEPTH_FORMAT)
+			AttachmentImage::transient_input_attachment(window.device().clone(), dimensions, DEPTH_FORMAT)
 				.map_err(|err| match err { ImageCreationError::AllocError(err) => err, err => unreachable!(err) })?;
 
-		let framebuffer_gbuffers =
+		let framebuffers =
+			target.images().iter()
+				.map(|image| {
+					Framebuffer::start(shared.subpass_target.render_pass().clone())
+						.add(image_color.clone())
+						.and_then(|fb| fb.add(image_normal.clone()))
+						.and_then(|fb| fb.add(image_depth.clone()))
+						.and_then(|fb| fb.add(image.clone()))
+						.and_then(|fb| fb.build())
+						.map(|fb| ImageFramebuffer::new(Arc::downgrade(&image), Arc::new(fb)))
+						.map_err(|err| match err {
+							FramebufferCreationError::OomError(err) => err,
+							err => unreachable!("{:?}", err),
+						})
+				})
+				.collect::<Result<Vec<_>, _>>()?;
+
+		let desc_target =
 			Arc::new(
-				Framebuffer::start(shared.subpass.render_pass().clone())
-					.add(image_color.clone())
-					.and_then(|fb| fb.add(image_normal.clone()))
-					.and_then(|fb| fb.add(image_depth.clone()))
-					.and_then(|fb| fb.build())
-					.map_err(|err| match err {
-						FramebufferCreationError::OomError(err) => err,
-						err => unreachable!("{:?}", err),
-					})?
+				PersistentDescriptorSet::start(shared.pipeline_target.clone(), 0)
+					.add_image(image_color.clone())
+					.unwrap()
+					.add_image(image_normal.clone())
+					.unwrap()
+					.build()
+					.unwrap()
 			);
+
+		let camera_desc_pool = FixedSizeDescriptorSetsPool::new(shared.pipeline_gbuffers.clone(), 0);
+		let mesh_desc_pool = FixedSizeDescriptorSetsPool::new(shared.pipeline_gbuffers.clone(), 1);
 
 		Ok(Self {
 			shared: shared,
 			meshes: vec![],
-			//framebuffers: framebuffers,
+			framebuffers: framebuffers,
 			target_id: target.id_root().make_id(),
+			image_color: image_color,
+			image_normal: image_normal,
+			image_depth: image_depth,
+			desc_target: desc_target,
 			camera_desc_pool: camera_desc_pool,
 			mesh_desc_pool: mesh_desc_pool,
-			framebuffer_gbuffers: framebuffer_gbuffers,
 		})
 	}
 
@@ -100,30 +107,31 @@ impl MeshBatch {
 	) -> Result<AutoCommandBuffer, DeviceMemoryAllocError> {
 		assert!(self.target_id.is_child_of(target.id_root()));
 
-		// let framebuffer = self.framebuffers[image_num].image
-		// 	.upgrade()
-		// 	.iter()
-		// 	.filter(|old_image| Arc::ptr_eq(&target.images()[image_num], &old_image))
-		// 	.next()
-		// 	.map(|_| self.framebuffers[image_num].framebuffer.clone());
-		// let framebuffer =
-		// 	if let Some(framebuffer) = framebuffer.as_ref() {
-		// 		framebuffer.clone()
-		// 	} else {
-		// 		let framebuffer = Framebuffer::start(self.shared.subpass.render_pass().clone())
-		// 			.add(target.images()[image_num].clone())
-		// 			.and_then(|fb| fb.build())
-		// 			.map(|fb| Arc::new(fb))
-		// 			.map_err(|err| {
-		// 				match err { FramebufferCreationError::OomError(err) => err, err => unreachable!("{:?}", err) }
-		// 			})?;
-		// 		self.framebuffers[image_num] =
-		// 			ImageFramebuffer::new(Arc::downgrade(&target.images()[image_num]), framebuffer.clone());
+		let framebuffer = self.framebuffers[image_num].image
+			.upgrade()
+			.iter()
+			.filter(|old_image| Arc::ptr_eq(&target.images()[image_num], &old_image))
+			.next()
+			.map(|_| self.framebuffers[image_num].framebuffer.clone());
+		let framebuffer =
+			if let Some(framebuffer) = framebuffer.as_ref() {
+				framebuffer.clone()
+			} else {
+				let framebuffer = Framebuffer::start(self.shared.subpass_gbuffers.render_pass().clone())
+					.add(self.image_color.clone())
+					.and_then(|fb| fb.add(self.image_normal.clone()))
+					.and_then(|fb| fb.add(self.image_depth.clone()))
+					.and_then(|fb| fb.add(target.images()[image_num].clone()))
+					.and_then(|fb| fb.build())
+					.map(|fb| Arc::new(fb))
+					.map_err(|err| {
+						match err { FramebufferCreationError::OomError(err) => err, err => unreachable!("{:?}", err) }
+					})?;
+				self.framebuffers[image_num] =
+					ImageFramebuffer::new(Arc::downgrade(&target.images()[image_num]), framebuffer.clone());
 
-		// 		framebuffer
-		// 	};
-
-		let dimensions = [self.framebuffer_gbuffers.width() as f32, self.framebuffer_gbuffers.height() as f32];
+				framebuffer
+			};
 
 		let camera_desc =
 			Arc::new(
@@ -138,12 +146,14 @@ impl MeshBatch {
 					.unwrap()
 			);
 
+		let dimensions = [framebuffer.width() as f32, framebuffer.height() as f32];
+
 		let mut command_buffer =
 			AutoCommandBufferBuilder::primary_one_time_submit(self.shared.shaders.device.clone(), window.queue().family())?
 				.begin_render_pass(
-					self.framebuffer_gbuffers.clone(),
+					framebuffer.clone(),
 					true,
-					vec![[0.1, 0.1, 0.1, 1.0].into(), [0.0; 4].into(), 1.0.into()]
+					vec![[0.0, 0.0, 0.0, 1.0].into(), [0.0; 4].into(), 1.0.into(), [0.0, 0.0, 0.0, 1.0].into()]
 				)
 				.unwrap();
 
@@ -165,7 +175,23 @@ impl MeshBatch {
 		}
 
 		Ok(
-			command_buffer.end_render_pass().unwrap()
+			command_buffer.next_subpass(false)
+				.unwrap()
+				.draw(
+					self.shared.pipeline_target.clone(),
+					DynamicState {
+						line_width: None,
+						viewports:
+							Some(vec![Viewport { origin: [0.0, 0.0], dimensions: dimensions, depth_range: 0.0..1.0 }]),
+						scissors: None,
+					},
+					vec![self.shared.shaders.target_vertices.clone()],
+					self.desc_target.clone(),
+					()
+				)
+				.unwrap()
+				.end_render_pass()
+				.unwrap()
 				.build()
 				.map_err(|err| match err { BuildError::OomError(err) => err, err => unreachable!("{}", err) })?
 		)
@@ -174,60 +200,116 @@ impl MeshBatch {
 
 pub struct MeshBatchShared {
 	shaders: Arc<MeshBatchShaders>,
-	subpass: Subpass<Arc<RenderPassAbstract + Send + Sync>>,
-	pipeline: Arc<GraphicsPipelineAbstract + Send + Sync + 'static>,
+	subpass_gbuffers: Subpass<Arc<RenderPassAbstract + Send + Sync>>,
+	subpass_target: Subpass<Arc<RenderPassAbstract + Send + Sync>>,
+	pipeline_gbuffers: Arc<GraphicsPipelineAbstract + Send + Sync + 'static>,
+	pipeline_target: Arc<GraphicsPipelineAbstract + Send + Sync + 'static>,
 }
 impl MeshBatchShared {
 	pub fn new(shaders: Arc<MeshBatchShaders>, format: Format) -> Arc<Self> {
-		let subpass =
-			Subpass::from(
-				Arc::new(
-					single_pass_renderpass!(
-						shaders.device.clone(),
-						attachments: {
-							color: { load: Clear, store: Store, format: format, samples: 1, },
-							normal: { load: Clear, store: Store, format: NORMAL_FORMAT, samples: 1, },
-							depth: { load: Clear, store: Store, format: DEPTH_FORMAT, samples: 1, }
-						},
-						pass: { color: [color, normal], depth_stencil: {depth} }
-					).expect("failed to create render pass")
-				) as Arc<RenderPassAbstract + Send + Sync>,
-				0
-			)
-			.expect("failed to create subpass");
+		let render_pass: Arc<RenderPassAbstract + Send + Sync> =
+			Arc::new(
+				ordered_passes_renderpass!(
+					shaders.device.clone(),
+					attachments: {
+						color: { load: Clear, store: Store, format: format, samples: 1, },
+						normal: { load: Clear, store: Store, format: NORMAL_FORMAT, samples: 1, },
+						depth: { load: Clear, store: Store, format: DEPTH_FORMAT, samples: 1, },
+						out: { load: Clear, store: Store, format: format, samples: 1, }
+					},
+					passes: [
+						{ color: [color, normal], depth_stencil: {depth}, input: [] },
+						{ color: [out], depth_stencil: {depth}, input: [color, normal] }
+					]
+				)
+				.unwrap()
+			);
 
-		let pipeline = Arc::new(
-			GraphicsPipeline::start()
-				.vertex_input_single_buffer::<MeshVertex>()
-				.vertex_shader(shaders.vertex_shader.main_entry_point(), ())
-				.triangle_list()
-				.viewports_dynamic_scissors_irrelevant(1)
-				.fragment_shader(shaders.fragment_shader.main_entry_point(), ())
-				.render_pass(subpass.clone())
-				.build(shaders.device.clone())
-				.expect("failed to create pipeline")
-		);
+		let subpass_gbuffers = Subpass::from(render_pass.clone(), 0).unwrap();
+		let subpass_target = Subpass::from(render_pass, 1).unwrap();
+
+		let pipeline_gbuffers =
+			Arc::new(
+				GraphicsPipeline::start()
+					.vertex_input_single_buffer::<MeshVertex>()
+					.vertex_shader(shaders.shader_gbuffers_vertex.main_entry_point(), ())
+					.triangle_list()
+					.viewports_dynamic_scissors_irrelevant(1)
+					.fragment_shader(shaders.shader_gbuffers_fragment.main_entry_point(), ())
+					.render_pass(subpass_gbuffers.clone())
+					.build(shaders.device.clone())
+					.expect("failed to create pipeline")
+			);
+
+		let pipeline_target =
+			Arc::new(
+				GraphicsPipeline::start()
+					.vertex_input_single_buffer::<TargetVertex>()
+					.vertex_shader(shaders.shader_target_vertex.main_entry_point(), ())
+					.triangle_list()
+					.viewports_dynamic_scissors_irrelevant(1)
+					.fragment_shader(shaders.shader_target_fragment.main_entry_point(), ())
+					.render_pass(subpass_target.clone())
+					.build(shaders.device.clone())
+					.expect("failed to create pipeline")
+			);
 
 		Arc::new(Self {
 			shaders: shaders,
-			subpass: subpass,
-			pipeline: pipeline.clone(),
+			subpass_gbuffers: subpass_gbuffers,
+			subpass_target: subpass_target,
+			pipeline_gbuffers: pipeline_gbuffers,
+			pipeline_target: pipeline_target,
 		})
 	}
 }
 
 pub struct MeshBatchShaders {
 	device: Arc<Device>,
-	vertex_shader: vs::Shader,
-	fragment_shader: fs::Shader,
+	target_vertices: Arc<ImmutableBuffer<[TargetVertex; 6]>>,
+	shader_gbuffers_vertex: vs_gbuffers::Shader,
+	shader_gbuffers_fragment: fs_gbuffers::Shader,
+	shader_target_vertex: vs_target::Shader,
+	shader_target_fragment: fs_target::Shader,
+	sampler: Arc<Sampler>,
 }
 impl MeshBatchShaders {
-	pub fn new(window: &Window) -> Result<Arc<Self>, MeshBatchShadersError> {
-		Ok(Arc::new(Self {
-			device: window.device().clone(),
-			vertex_shader: vs::Shader::load(window.device().clone())?,
-			fragment_shader: fs::Shader::load(window.device().clone())?,
-		}))
+	pub fn new(window: &Window) -> Result<(Arc<Self>, impl GpuFuture), MeshBatchShadersError> {
+		let (target_vertices, future) =
+			ImmutableBuffer::from_data(
+				[
+					TargetVertex { position: [0.0, 0.0] },
+					TargetVertex { position: [1.0, 0.0] },
+					TargetVertex { position: [0.0, 1.0] },
+					TargetVertex { position: [0.0, 1.0] },
+					TargetVertex { position: [1.0, 0.0] },
+					TargetVertex { position: [1.0, 1.0] },
+				],
+				BufferUsage::vertex_buffer(),
+				window.queue().clone(),
+			)?;
+
+		Ok((
+			Arc::new(Self {
+				device: window.device().clone(),
+				target_vertices: target_vertices,
+				shader_gbuffers_vertex: vs_gbuffers::Shader::load(window.device().clone())?,
+				shader_gbuffers_fragment: fs_gbuffers::Shader::load(window.device().clone())?,
+				shader_target_vertex: vs_target::Shader::load(window.device().clone())?,
+				shader_target_fragment: fs_target::Shader::load(window.device().clone())?,
+				sampler:
+					Sampler::new(
+						window.device().clone(),
+						Filter::Linear,
+						Filter::Linear, MipmapMode::Nearest,
+						SamplerAddressMode::Repeat,
+						SamplerAddressMode::Repeat,
+						SamplerAddressMode::Repeat,
+						0.0, 1.0, 0.0, 0.0
+					)?,
+			}),
+			future
+		))
 	}
 }
 
@@ -288,18 +370,13 @@ impl Mesh {
 		dimensions: [f32; 2],
 	) -> Result<AutoCommandBuffer, OomError> {
 		Ok(
-			AutoCommandBufferBuilder::secondary_graphics_one_time_submit(shared.shaders.device.clone(), queue_family, shared.subpass.clone())?
+			AutoCommandBufferBuilder::secondary_graphics_one_time_submit(shared.shaders.device.clone(), queue_family, shared.subpass_gbuffers.clone())?
 				.draw(
-					shared.pipeline.clone(),
+					shared.pipeline_gbuffers.clone(),
 					DynamicState {
 						line_width: None,
-						viewports: Some(vec![
-							Viewport {
-								origin: [0.0, 0.0],
-								dimensions: dimensions,
-								depth_range: 0.0..1.0,
-							}
-						]),
+						viewports:
+							Some(vec![Viewport { origin: [0.0, 0.0], dimensions: dimensions, depth_range: 0.0..1.0 }]),
 						scissors: None,
 					},
 					vec![self.vertices.clone()],
@@ -383,12 +460,15 @@ pub struct MeshVertex {
 }
 impl_vertex!(MeshVertex, position, normal);
 
-mod vs {
+#[derive(Debug, Clone)]
+struct TargetVertex { position: [f32; 2] }
+impl_vertex!(TargetVertex, position);
+
+mod vs_gbuffers {
 	#[allow(dead_code)]
 	#[derive(VulkanoShader)]
 	#[ty = "vertex"]
 	#[src = "#version 450
-
 layout(location = 0) in vec3 position;
 layout(location = 1) in vec3 normal;
 layout(location = 0) out vec3 out_normal;
@@ -407,24 +487,8 @@ vec3 quat_mul(vec4 quat, vec3 vec) {
 	return cross(quat.xyz, cross(quat.xyz, vec) + vec * quat.w) * 2.0 + vec;
 }
 
-mat3 mat3_from_quat(vec4 quat) {
-	return mat3(
-		quat_mul(quat, vec3(1, 0, 0)),
-		quat_mul(quat, vec3(0, 1, 0)),
-		quat_mul(quat, vec3(0, 0, 1))
-	);
-}
-
 vec4 perspective(vec3 pos, vec4 proj) {
 	return vec4(pos.xy * proj.xy, pos.z * proj.z + proj.w, -pos.z);
-}
-
-vec4 invert_perspective_params(vec4 proj) {
-	return vec4(proj.w / proj.x, proj.w / proj.y, -proj.w, proj.z);
-}
-
-vec3 inv_perspective(vec4 proj, vec3 pos) {
-	return vec3(pos.xy * proj.xy, proj.z) / (pos.z + proj.w);
 }
 
 void main() {
@@ -434,12 +498,11 @@ void main() {
 	struct Dummy;
 }
 
-mod fs {
+mod fs_gbuffers {
 	#[allow(dead_code)]
 	#[derive(VulkanoShader)]
 	#[ty = "fragment"]
 	#[src = "#version 450
-
 layout(location = 0) in vec3 normal;
 layout(location = 0) out vec4 out_color;
 layout(location = 1) out vec4 out_normal;
@@ -448,5 +511,36 @@ void main() {
 	out_color = vec4(1);
 	out_normal = vec4(normal, 1);
 }"]
+	struct Dummy;
+}
+
+mod vs_target {
+	#[allow(dead_code)]
+	#[derive(VulkanoShader)]
+	#[ty = "vertex"]
+	#[src = "#version 450
+layout(location = 0) in vec2 position;
+
+void main() {
+	gl_Position = vec4(position * 2 - 1, 0.0, 1.0);
+}
+"]
+	struct Dummy;
+}
+
+mod fs_target {
+	#[allow(dead_code)]
+	#[derive(VulkanoShader)]
+	#[ty = "fragment"]
+	#[src = "#version 450
+layout(location = 0) out vec4 out_color;
+
+layout(input_attachment_index = 0, set = 0, binding = 0) uniform subpassInput color;
+layout(input_attachment_index = 1, set = 0, binding = 1) uniform subpassInput normal;
+
+void main() {
+	out_color = subpassLoad(color);
+}
+"]
 	struct Dummy;
 }

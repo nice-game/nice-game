@@ -29,7 +29,8 @@ fn main() {
 			"nIce Game"
 		);
 
-	let mesh_batch_shared = MeshBatchShared::new(MeshBatchShaders::new(&mut window).unwrap(), window.format());
+	let (mesh_batch_shaders, mesh_batch_shaders_future) = MeshBatchShaders::new(&mut window).unwrap();
+	let mesh_batch_shared = MeshBatchShared::new(mesh_batch_shaders, window.format());
 
 	let (mesh, mesh_future) = Mesh::new(
 		&window,
@@ -59,7 +60,7 @@ fn main() {
 			1000.0
 		).unwrap();
 
-	window.join_future(mesh_future);
+	window.join_future(mesh_future.join(mesh_batch_shaders_future));
 
 	loop {
 		let mut done = false;
