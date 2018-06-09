@@ -216,14 +216,14 @@ impl From<SamplerCreationError> for MeshBatchShadersError {
 }
 
 pub struct Mesh {
-	position: Arc<ImmutableBuffer<[f32; 2]>>,
+	position: Arc<ImmutableBuffer<[f32; 3]>>,
 	vertices: Arc<ImmutableBuffer<[MeshVertex]>>,
 }
 impl Mesh {
 	pub fn new<D>(
 		window: &Window,
 		vertices: D,
-		position: [f32; 2],
+		position: [f32; 3],
 	) -> Result<(Self, impl GpuFuture), DeviceMemoryAllocError>
 	where
 		D: ExactSizeIterator<Item = MeshVertex>,
@@ -335,7 +335,7 @@ impl Camera {
 }
 
 #[derive(Debug, Clone)]
-pub struct MeshVertex { pub position: [f32; 2] }
+pub struct MeshVertex { pub position: [f32; 3] }
 impl_vertex!(MeshVertex, position);
 
 mod vs {
@@ -344,18 +344,46 @@ mod vs {
 	#[ty = "vertex"]
 	#[src = "#version 450
 
-layout(location = 0) in vec2 position;
-layout(location = 0) out vec2 tex_coords;
+layout(location = 0) in vec3 position;
+layout(location = 0) out vec2 color;
 
 layout(set = 0, binding = 0) uniform CameraPos { vec3 pos; } camera_pos;
 layout(set = 0, binding = 1) uniform CameraRot { vec4 rot; } camera_rot;
-layout(set = 0, binding = 2) uniform CameraProj { vec2 proj; } camera_proj;
+layout(set = 0, binding = 2) uniform CameraProj { vec4 proj; } camera_proj;
 
-layout(set = 1, binding = 0) uniform MeshDynamic { vec2 pos; } mesh;
+layout(set = 1, binding = 0) uniform MeshDynamic { vec3 pos; } mesh;
+
+vec4 quat_inv(vec4 quat) {
+	return vec4(-quat.xyz, quat.w) / dot(quat, quat);
+}
+
+vec3 quat_mul(vec4 quat, vec3 vec) {
+	return cross(quat.xyz, cross(quat.xyz, vec) + vec * quat.w) * 2.0 + vec;
+}
+
+mat3 mat3_from_quat(vec4 quat) {
+	return mat3(
+		quat_mul(quat, vec3(1, 0, 0)),
+		quat_mul(quat, vec3(0, 1, 0)),
+		quat_mul(quat, vec3(0, 0, 1))
+	);
+}
+
+vec4 perspective(vec3 pos, vec4 proj) {
+	return vec4(pos.xy * proj.xy, pos.z * proj.z + proj.w, -pos.z);
+}
+
+vec4 invert_perspective_params(vec4 proj) {
+	return vec4(proj.w / proj.x, proj.w / proj.y, -proj.w, proj.z);
+}
+
+vec3 inv_perspective(vec4 proj, vec3 pos) {
+	return vec3(pos.xy * proj.xy, proj.z) / (pos.z + proj.w);
+}
 
 void main() {
-	tex_coords = position;
-	gl_Position = vec4(2 * position - 1, 0.0, 1.0);
+	color = position.xy;
+	gl_Position = perspective(quat_mul(quat_inv(camera_rot.rot), position - camera_pos.pos), camera_proj.proj);
 }"]
 	struct Dummy;
 }
@@ -366,11 +394,11 @@ mod fs {
 	#[ty = "fragment"]
 	#[src = "#version 450
 
-layout(location = 0) in vec2 tex_coords;
+layout(location = 0) in vec2 color;
 layout(location = 0) out vec4 f_color;
 
 void main() {
-	f_color = vec4(tex_coords, 1, 1);
+	f_color = vec4(color, 1, 1);
 }"]
 	struct Dummy;
 }

@@ -34,14 +34,14 @@ fn main() {
 	let (mesh, mesh_future) = Mesh::new(
 		&mut window,
 		vec![
-			MeshVertex { position: [0.0, 0.0] },
-			MeshVertex { position: [1.0, 0.0] },
-			MeshVertex { position: [0.0, 1.0] },
-			MeshVertex { position: [0.0, 1.0] },
-			MeshVertex { position: [1.0, 0.0] },
-			MeshVertex { position: [1.0, 1.0] },
+			MeshVertex { position: [-0.5, -0.5, 2.0] },
+			MeshVertex { position: [0.5, -0.5, 2.0] },
+			MeshVertex { position: [-0.5, 0.5, 2.0] },
+			MeshVertex { position: [-0.5, 0.5, 2.0] },
+			MeshVertex { position: [0.5, -0.5, 2.0] },
+			MeshVertex { position: [0.5, 0.5, 2.0] },
 		].into_iter(),
-		[10.0, 10.0]
+		[0.0, 0.0, 10.0]
 	).unwrap();
 
 	let mut mesh_batch = MeshBatch::new(&mut window, mesh_batch_shared).unwrap();
@@ -54,7 +54,7 @@ fn main() {
 			Vector3::zero(),
 			Quaternion::one(),
 			width as f32 / height as f32,
-			0.9,
+			140.0,
 			1.0,
 			1000.0
 		).unwrap();
