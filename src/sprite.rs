@@ -26,7 +26,10 @@ pub struct SpriteBatch {
 	target_desc: Arc<DescriptorSet + Send + Sync + 'static>,
 }
 impl SpriteBatch {
-	pub fn new(target: &mut RenderTarget, shared: Arc<SpriteBatchShared>) -> Result<(Self, impl GpuFuture), DeviceMemoryAllocError> {
+	pub fn new(
+		target: &mut RenderTarget,
+		shared: Arc<SpriteBatchShared>
+	) -> Result<(Self, impl GpuFuture), DeviceMemoryAllocError> {
 		let dimensions = target.images()[0].dimensions();
 		let (target_descs, future) =
 			Self::make_target_desc(target.queue().clone(), &shared, dimensions.width(), dimensions.height())?;
@@ -38,8 +41,9 @@ impl SpriteBatch {
 						.add(image.clone())
 						.and_then(|fb| fb.build())
 						.map(|fb| (Arc::downgrade(&image), Arc::new(fb) as _))
-						.map_err(|err| {
-							match err { FramebufferCreationError::OomError(err) => err, err => unreachable!("{:?}", err) }
+						.map_err(|err| match err {
+							FramebufferCreationError::OomError(err) => err,
+							err => unreachable!("{:?}", err),
 						})
 				})
 				.collect::<Result<Vec<_>, _>>()?;
@@ -264,7 +268,12 @@ pub struct Sprite {
 	position: Arc<ImmutableBuffer<[f32; 2]>>,
 }
 impl Sprite {
-	pub fn new(target: &mut RenderTarget, shared: &SpriteBatchShared, texture: &Texture, position: [f32; 2]) -> Result<(Self, impl GpuFuture), DeviceMemoryAllocError> {
+	pub fn new(
+		target: &mut RenderTarget,
+		shared: &SpriteBatchShared,
+		texture: &Texture,
+		position: [f32; 2]
+	) -> Result<(Self, impl GpuFuture), DeviceMemoryAllocError> {
 		let (position, future) =
 			ImmutableBuffer::from_data(position, BufferUsage::uniform_buffer(), target.queue().clone())?;
 
