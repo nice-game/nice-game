@@ -13,7 +13,6 @@ use vulkano::{
 	instance::QueueFamily,
 	memory::{ DeviceMemoryAllocError, pool::StdMemoryPool },
 	pipeline::{ GraphicsPipeline, GraphicsPipelineAbstract, viewport::Viewport },
-	sampler::{ Filter, MipmapMode, Sampler, SamplerAddressMode, SamplerCreationError },
 	sync::GpuFuture,
 };
 
@@ -39,15 +38,9 @@ impl MeshBatch {
 		shared: Arc<MeshBatchShared>
 	) -> Result<Self, DeviceMemoryAllocError> {
 		let dimensions = target.images()[0].dimensions().width_height();
-		let image_color =
-			AttachmentImage::transient_input_attachment(window.device().clone(), dimensions, window.format())
-				.map_err(|err| match err { ImageCreationError::AllocError(err) => err, err => unreachable!(err) })?;
-		let image_normal =
-			AttachmentImage::transient_input_attachment(window.device().clone(), dimensions, NORMAL_FORMAT)
-				.map_err(|err| match err { ImageCreationError::AllocError(err) => err, err => unreachable!(err) })?;
-		let image_depth =
-			AttachmentImage::transient_input_attachment(window.device().clone(), dimensions, DEPTH_FORMAT)
-				.map_err(|err| match err { ImageCreationError::AllocError(err) => err, err => unreachable!(err) })?;
+		let image_color = Self::make_transient_input_attachment(window.device().clone(), dimensions, window.format())?;
+		let image_normal = Self::make_transient_input_attachment(window.device().clone(), dimensions, NORMAL_FORMAT)?;
+		let image_depth = Self::make_transient_input_attachment(window.device().clone(), dimensions, DEPTH_FORMAT)?;
 
 		let framebuffers =
 			target.images().iter()
@@ -107,6 +100,8 @@ impl MeshBatch {
 	) -> Result<AutoCommandBuffer, DeviceMemoryAllocError> {
 		assert!(self.target_id.is_child_of(target.id_root()));
 
+		let dimensions = target.images()[image_num].dimensions().width_height();
+
 		let framebuffer = self.framebuffers[image_num].image
 			.upgrade()
 			.iter()
@@ -117,6 +112,20 @@ impl MeshBatch {
 			if let Some(framebuffer) = framebuffer.as_ref() {
 				framebuffer.clone()
 			} else {
+				self.image_color = Self::make_transient_input_attachment(window.device().clone(), dimensions, window.format())?;
+				self.image_normal = Self::make_transient_input_attachment(window.device().clone(), dimensions, NORMAL_FORMAT)?;
+				self.image_depth = Self::make_transient_input_attachment(window.device().clone(), dimensions, DEPTH_FORMAT)?;
+				self.desc_target =
+					Arc::new(
+						PersistentDescriptorSet::start(self.shared.pipeline_target.clone(), 0)
+							.add_image(self.image_color.clone())
+							.unwrap()
+							.add_image(self.image_normal.clone())
+							.unwrap()
+							.build()
+							.unwrap()
+					);
+
 				let framebuffer = Framebuffer::start(self.shared.subpass_gbuffers.render_pass().clone())
 					.add(self.image_color.clone())
 					.and_then(|fb| fb.add(self.image_normal.clone()))
@@ -196,6 +205,15 @@ impl MeshBatch {
 				.map_err(|err| match err { BuildError::OomError(err) => err, err => unreachable!("{}", err) })?
 		)
 	}
+
+	fn make_transient_input_attachment(
+		device: Arc<Device>,
+		dimensions: [u32; 2],
+		format: Format,
+	) -> Result<Arc<AttachmentImage>, DeviceMemoryAllocError> {
+		AttachmentImage::transient_input_attachment(device, dimensions, format)
+			.map_err(|err| match err { ImageCreationError::AllocError(err) => err, err => unreachable!(err) })
+	}
 }
 
 pub struct MeshBatchShared {
@@ -271,7 +289,6 @@ pub struct MeshBatchShaders {
 	shader_gbuffers_fragment: fs_gbuffers::Shader,
 	shader_target_vertex: vs_target::Shader,
 	shader_target_fragment: fs_target::Shader,
-	sampler: Arc<Sampler>,
 }
 impl MeshBatchShaders {
 	pub fn new(window: &Window) -> Result<(Arc<Self>, impl GpuFuture), MeshBatchShadersError> {
@@ -297,16 +314,6 @@ impl MeshBatchShaders {
 				shader_gbuffers_fragment: fs_gbuffers::Shader::load(window.device().clone())?,
 				shader_target_vertex: vs_target::Shader::load(window.device().clone())?,
 				shader_target_fragment: fs_target::Shader::load(window.device().clone())?,
-				sampler:
-					Sampler::new(
-						window.device().clone(),
-						Filter::Linear,
-						Filter::Linear, MipmapMode::Nearest,
-						SamplerAddressMode::Repeat,
-						SamplerAddressMode::Repeat,
-						SamplerAddressMode::Repeat,
-						0.0, 1.0, 0.0, 0.0
-					)?,
 			}),
 			future
 		))
@@ -327,15 +334,6 @@ impl From<DeviceMemoryAllocError> for MeshBatchShadersError {
 impl From<OomError> for MeshBatchShadersError {
 	fn from(val: OomError) -> Self {
 		MeshBatchShadersError::OomError(val)
-	}
-}
-impl From<SamplerCreationError> for MeshBatchShadersError {
-	fn from(val: SamplerCreationError) -> Self {
-		match val {
-			SamplerCreationError::OomError(err) => MeshBatchShadersError::OomError(err),
-			SamplerCreationError::TooManyObjects => MeshBatchShadersError::TooManyObjects,
-			_ => unreachable!(),
-		}
 	}
 }
 

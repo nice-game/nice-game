@@ -48,17 +48,7 @@ fn main() {
 	let mut mesh_batch = MeshBatch::new(&window, &window, mesh_batch_shared).unwrap();
 	mesh_batch.add_mesh(mesh);
 
-	let [width, height] = window.images()[0].dimensions().width_height();
-	let camera =
-		Camera::new(
-			&window,
-			Vector3::zero(),
-			Quaternion::one(),
-			width as f32 / height as f32,
-			140.0,
-			1.0,
-			1000.0
-		).unwrap();
+	let mut camera = make_camera(&window);
 
 	window.join_future(mesh_future.join(mesh_batch_shaders_future));
 
@@ -66,6 +56,7 @@ fn main() {
 		let mut done = false;
 		events.poll_events(|event| match event {
 			Event::WindowEvent { event: WindowEvent::Closed, .. } => done = true,
+			Event::WindowEvent { event: WindowEvent::Resized(_, _), .. } => camera = make_camera(&window),
 			_ => (),
 		});
 
@@ -83,4 +74,17 @@ fn main() {
 			})
 			.unwrap();
 	}
+}
+
+fn make_camera(window: &Window) -> Camera {
+	let [width, height] = window.images()[0].dimensions().width_height();
+	Camera::new(
+		&window,
+		Vector3::zero(),
+		Quaternion::one(),
+		width as f32 / height as f32,
+		140.0,
+		1.0,
+		1000.0
+	).unwrap()
 }
