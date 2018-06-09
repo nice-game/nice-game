@@ -4,5 +4,6 @@ version = "0.1.0"
 authors = ["IcyDefiance <icydefiance@gmail.com>"]
 
 [dependencies]
+cgmath = "0.16"
 futures = "0.2"
 nice-game = { path = "../../" }

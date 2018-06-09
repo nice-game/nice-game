@@ -1,4 +1,3 @@
-extern crate atom;
 extern crate cgmath;
 extern crate futures;
 extern crate image;
@@ -12,7 +11,6 @@ extern crate vulkano_shader_derive;
 extern crate vulkano_win;
 extern crate winit;
 
-pub mod camera;
 pub mod cpu_pool;
 pub mod mesh;
 pub mod sprite;

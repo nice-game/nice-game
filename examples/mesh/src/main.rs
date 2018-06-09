@@ -1,12 +1,14 @@
+extern crate cgmath;
 extern crate futures;
 extern crate nice_game;
 
+use cgmath::{ One, Quaternion, Vector3, Zero };
 use nice_game::{
 	Context,
 	GpuFuture,
 	RenderTarget,
 	Version,
-	mesh::{ Mesh, MeshBatch, MeshBatchShaders, MeshBatchShared, MeshVertex },
+	mesh::{ Camera, Mesh, MeshBatch, MeshBatchShaders, MeshBatchShared, MeshVertex },
 	window::{ Event, EventsLoop, Window, WindowEvent },
 };
 
@@ -45,6 +47,18 @@ fn main() {
 	let mut mesh_batch = MeshBatch::new(&mut window, mesh_batch_shared).unwrap();
 	mesh_batch.add_mesh(mesh);
 
+	let [width, height] = window.images()[0].dimensions().width_height();
+	let camera =
+		Camera::new(
+			&window,
+			Vector3::zero(),
+			Quaternion::one(),
+			width as f32 / height as f32,
+			0.9,
+			1.0,
+			1000.0
+		).unwrap();
+
 	window.join_future(mesh_future);
 
 	loop {
@@ -60,7 +74,10 @@ fn main() {
 
 		window
 			.present(|window, image_num, future| {
-				future.then_execute(window.queue().clone(), mesh_batch.commands(window, window, image_num).unwrap())
+				future
+					.then_execute(
+						window.queue().clone(), mesh_batch.commands(window, window, image_num, &camera).unwrap()
+					)
 					.unwrap()
 			})
 			.unwrap();

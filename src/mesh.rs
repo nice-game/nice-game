@@ -1,15 +1,16 @@
 use { ImageFramebuffer, ObjectId, RenderTarget, window::Window };
-use std::sync::{ Arc, Mutex };
+use cgmath::{ vec4, Quaternion, Vector3, Vector4 };
+use std::{ f32::consts::PI, sync::Arc };
 use vulkano::{
 	OomError,
-	buffer::{ BufferUsage, ImmutableBuffer },
+	buffer::{ BufferUsage, CpuBufferPool, ImmutableBuffer, cpu_pool::CpuBufferPoolSubbuffer },
 	command_buffer::{ AutoCommandBuffer, AutoCommandBufferBuilder, BuildError, DynamicState },
-	descriptor::descriptor_set::FixedSizeDescriptorSetsPool,
+	descriptor::{ DescriptorSet, descriptor_set::FixedSizeDescriptorSetsPool },
 	device::Device,
 	format::Format,
 	framebuffer::{ Framebuffer, FramebufferAbstract, FramebufferCreationError, RenderPassAbstract, Subpass },
 	instance::QueueFamily,
-	memory::DeviceMemoryAllocError,
+	memory::{ DeviceMemoryAllocError, pool::StdMemoryPool },
 	pipeline::{ GraphicsPipeline, GraphicsPipelineAbstract, viewport::Viewport },
 	sampler::SamplerCreationError,
 	sync::GpuFuture,
@@ -20,6 +21,8 @@ pub struct MeshBatch {
 	meshes: Vec<Mesh>,
 	framebuffers: Vec<ImageFramebuffer>,
 	target_id: ObjectId,
+	camera_desc_pool: FixedSizeDescriptorSetsPool<Arc<GraphicsPipelineAbstract + Send + Sync + 'static>>,
+	mesh_desc_pool: FixedSizeDescriptorSetsPool<Arc<GraphicsPipelineAbstract + Send + Sync + 'static>>,
 }
 impl MeshBatch {
 	pub fn new(target: &mut RenderTarget, shared: Arc<MeshBatchShared>) -> Result<Self, DeviceMemoryAllocError> {
@@ -37,11 +40,16 @@ impl MeshBatch {
 				})
 				.collect::<Result<Vec<_>, _>>()?;
 
+		let camera_desc_pool = FixedSizeDescriptorSetsPool::new(shared.pipeline.clone(), 0);
+		let mesh_desc_pool = FixedSizeDescriptorSetsPool::new(shared.pipeline.clone(), 1);
+
 		Ok(Self {
 			shared: shared,
 			meshes: vec![],
 			framebuffers: framebuffers,
 			target_id: target.id_root().make_id(),
+			camera_desc_pool: camera_desc_pool,
+			mesh_desc_pool: mesh_desc_pool,
 		})
 	}
 
@@ -54,6 +62,7 @@ impl MeshBatch {
 		window: &Window,
 		target: &RenderTarget,
 		image_num: usize,
+		camera: &Camera,
 	) -> Result<AutoCommandBuffer, DeviceMemoryAllocError> {
 		assert!(self.target_id.is_child_of(target.id_root()));
 
@@ -87,11 +96,32 @@ impl MeshBatch {
 				.begin_render_pass(framebuffer, true, vec![[0.1, 0.1, 0.1, 1.0].into()])
 				.unwrap();
 
+		let camera_desc =
+			Arc::new(
+				self.camera_desc_pool.next()
+					.add_buffer(camera.position_buffer.clone())
+					.unwrap()
+					.add_buffer(camera.rotation_buffer.clone())
+					.unwrap()
+					.add_buffer(camera.projection_buffer.clone())
+					.unwrap()
+					.build()
+					.unwrap()
+			);
+
 		for mesh in &mut self.meshes {
 			command_buffer =
 				unsafe {
 					command_buffer
-						.execute_commands(mesh.make_commands(&self.shared, window.queue().family(), dimensions)?)
+						.execute_commands(
+							mesh.make_commands(
+								&self.shared,
+								camera_desc.clone(),
+								&mut self.mesh_desc_pool,
+								window.queue().family(),
+								dimensions
+							)?
+						)
 						.unwrap()
 				};
 		}
@@ -108,7 +138,6 @@ pub struct MeshBatchShared {
 	shaders: Arc<MeshBatchShaders>,
 	subpass: Subpass<Arc<RenderPassAbstract + Send + Sync>>,
 	pipeline: Arc<GraphicsPipelineAbstract + Send + Sync + 'static>,
-	mesh_desc_pool: Mutex<FixedSizeDescriptorSetsPool<Arc<GraphicsPipelineAbstract + Send + Sync + 'static>>>,
 }
 impl MeshBatchShared {
 	pub fn new(shaders: Arc<MeshBatchShaders>, format: Format) -> Arc<Self> {
@@ -141,7 +170,6 @@ impl MeshBatchShared {
 			shaders: shaders,
 			subpass: subpass,
 			pipeline: pipeline.clone(),
-			mesh_desc_pool: Mutex::new(FixedSizeDescriptorSetsPool::new(pipeline, 0)),
 		})
 	}
 }
@@ -212,6 +240,8 @@ impl Mesh {
 	fn make_commands(
 		&mut self,
 		shared: &MeshBatchShared,
+		camera_desc: impl DescriptorSet + Send + Sync + 'static,
+		mesh_desc_pool: &mut FixedSizeDescriptorSetsPool<Arc<GraphicsPipelineAbstract + Send + Sync + 'static>>,
 		queue_family: QueueFamily,
 		dimensions: [f32; 2],
 	) -> Result<AutoCommandBuffer, OomError> {
@@ -231,18 +261,76 @@ impl Mesh {
 						scissors: None,
 					},
 					vec![self.vertices.clone()],
-					shared.mesh_desc_pool.lock().unwrap()
-						.next()
-						.add_buffer(self.position.clone())
-						.unwrap()
-						.build()
-						.unwrap(),
+					(camera_desc, mesh_desc_pool.next().add_buffer(self.position.clone()).unwrap().build().unwrap()),
 					()
 				)
 				.unwrap()
 				.build()
 				.map_err(|err| match err { BuildError::OomError(err) => err, err => unreachable!("{}", err) })?
 		)
+	}
+}
+
+pub struct Camera {
+	position_pool: CpuBufferPool<Vector3<f32>>,
+	rotation_pool: CpuBufferPool<Quaternion<f32>>,
+	projection_pool: CpuBufferPool<Vector4<f32>>,
+	position_buffer: CpuBufferPoolSubbuffer<Vector3<f32>, Arc<StdMemoryPool>>,
+	rotation_buffer: CpuBufferPoolSubbuffer<Quaternion<f32>, Arc<StdMemoryPool>>,
+	projection_buffer: CpuBufferPoolSubbuffer<Vector4<f32>, Arc<StdMemoryPool>>,
+}
+impl Camera {
+	pub fn new(
+		window: &Window,
+		position: Vector3<f32>,
+		rotation: Quaternion<f32>,
+		aspect: f32,
+		fovx: f32,
+		znear: f32,
+		zfar: f32
+	) -> Result<Self, DeviceMemoryAllocError> {
+		let position_pool = CpuBufferPool::uniform_buffer(window.device().clone());
+		let rotation_pool = CpuBufferPool::uniform_buffer(window.device().clone());
+		let projection_pool = CpuBufferPool::uniform_buffer(window.device().clone());
+
+		let position_buffer = position_pool.next(position)?;
+		let rotation_buffer = rotation_pool.next(rotation)?;
+		let projection_buffer = projection_pool.next(Self::projection(aspect, fovx, znear, zfar))?;
+
+		Ok(Self {
+			position_pool: position_pool,
+			rotation_pool: rotation_pool,
+			projection_pool: projection_pool,
+			position_buffer: position_buffer,
+			rotation_buffer: rotation_buffer,
+			projection_buffer: projection_buffer,
+		})
+	}
+
+	pub fn set_position(
+		&mut self,
+		aspect: f32,
+		fovx: f32,
+		znear: f32,
+		zfar: f32
+	) -> Result<(), DeviceMemoryAllocError> {
+		self.projection_buffer = self.projection_pool.next(Self::projection(aspect, fovx, znear, zfar))?;
+		Ok(())
+	}
+
+	pub fn set_projection(&mut self, position: Vector3<f32>) -> Result<(), DeviceMemoryAllocError> {
+		self.position_buffer = self.position_pool.next(position)?;
+		Ok(())
+	}
+
+	pub fn set_rotation(&mut self, rotation: Quaternion<f32>) -> Result<(), DeviceMemoryAllocError> {
+		self.rotation_buffer = self.rotation_pool.next(rotation)?;
+		Ok(())
+	}
+
+	fn projection(aspect: f32, fovx: f32, znear: f32, zfar: f32) -> Vector4<f32> {
+		let f = 1.0 / (fovx * (PI / 360.0)).tan();
+		vec4(f / aspect, f, (zfar + znear) / (znear - zfar), 2.0 * zfar * znear / (znear - zfar))
 	}
 }
 
@@ -259,9 +347,11 @@ mod vs {
 layout(location = 0) in vec2 position;
 layout(location = 0) out vec2 tex_coords;
 
-layout(set = 0, binding = 0) uniform MeshDynamic {
-	vec2 pos;
-} mesh_dynamic;
+layout(set = 0, binding = 0) uniform CameraPos { vec3 pos; } camera_pos;
+layout(set = 0, binding = 1) uniform CameraRot { vec4 rot; } camera_rot;
+layout(set = 0, binding = 2) uniform CameraProj { vec2 proj; } camera_proj;
+
+layout(set = 1, binding = 0) uniform MeshDynamic { vec2 pos; } mesh;
 
 void main() {
 	tex_coords = position;
