@@ -15,12 +15,29 @@ where
 	CPU_POOL.lock().unwrap().dispatch(func)
 }
 
-pub fn spawn_fs<T, E>(func: impl FnOnce(&mut task::Context) -> Result<T, E> + Send + 'static) -> CpuFuture<T, E>
+pub fn spawn_fs<T>(func: impl FnOnce(&mut task::Context) -> Result<T, io::Error> + Send + 'static) -> CpuFuture<T, io::Error>
 where
-	T: Send + 'static,
-	E: Send + 'static
+	T: Send + 'static
 {
 	FS_POOL.lock().unwrap().dispatch(func)
+}
+
+pub fn spawn_fs_then_cpu<FT, CT, E>(
+	func_fs: impl FnOnce(&mut task::Context) -> Result<FT, io::Error> + Send + 'static,
+	func_cpu: impl FnOnce(&mut task::Context, FT) -> Result<CT, E> + Send + 'static,
+) -> DiskCpuFuture<CT, E>
+where
+	FT: Send + 'static,
+	CT: Send + 'static,
+	E: Send + 'static
+{
+	let future =
+		spawn_fs(move |cx| {
+			let fs_result = func_fs(cx)?;
+			Ok(spawn_cpu(move |cx| func_cpu(cx, fs_result)))
+		});
+
+	DiskCpuFuture::new(future)
 }
 
 pub struct CpuPool {
