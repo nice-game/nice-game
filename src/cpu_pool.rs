@@ -7,12 +7,20 @@ lazy_static! {
 	static ref FS_POOL: Mutex<CpuPool> = Mutex::new(CpuPool::new(1));
 }
 
-pub fn cpu_pool() -> &'static Mutex<CpuPool> {
-	&CPU_POOL
+pub fn spawn_cpu<T, E>(func: impl FnOnce(&mut task::Context) -> Result<T, E> + Send + 'static) -> CpuFuture<T, E>
+where
+	T: Send + 'static,
+	E: Send + 'static
+{
+	CPU_POOL.lock().unwrap().dispatch(func)
 }
 
-pub fn fs_pool() -> &'static Mutex<CpuPool> {
-	&FS_POOL
+pub fn spawn_fs<T, E>(func: impl FnOnce(&mut task::Context) -> Result<T, E> + Send + 'static) -> CpuFuture<T, E>
+where
+	T: Send + 'static,
+	E: Send + 'static
+{
+	FS_POOL.lock().unwrap().dispatch(func)
 }
 
 pub struct CpuPool {
