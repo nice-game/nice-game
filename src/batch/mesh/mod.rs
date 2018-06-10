@@ -27,9 +27,6 @@ pub struct MeshBatch {
 	meshes: Vec<Mesh>,
 	framebuffers: Vec<ImageFramebuffer>,
 	target_id: ObjectId,
-	image_color: Arc<AttachmentImage>,
-	image_normal: Arc<AttachmentImage>,
-	image_depth: Arc<AttachmentImage>,
 	desc_target: Arc<DescriptorSet + Send + Sync + 'static>,
 	camera_desc_pool: FixedSizeDescriptorSetsPool<Arc<GraphicsPipelineAbstract + Send + Sync + 'static>>,
 	mesh_desc_pool: FixedSizeDescriptorSetsPool<Arc<GraphicsPipelineAbstract + Send + Sync + 'static>>,
@@ -40,9 +37,12 @@ impl MeshBatch {
 		shared: Arc<MeshBatchShared>
 	) -> Result<Self, DeviceMemoryAllocError> {
 		let dimensions = target.images()[0].dimensions().width_height();
-		let image_color = Self::make_transient_input_attachment(shared.shaders.device.clone(), dimensions, target.format())?;
-		let image_normal = Self::make_transient_input_attachment(shared.shaders.device.clone(), dimensions, NORMAL_FORMAT)?;
-		let image_depth = Self::make_transient_input_attachment(shared.shaders.device.clone(), dimensions, DEPTH_FORMAT)?;
+		let image_color =
+			Self::make_transient_input_attachment(shared.shaders.device.clone(), dimensions, target.format())?;
+		let image_normal =
+			Self::make_transient_input_attachment(shared.shaders.device.clone(), dimensions, NORMAL_FORMAT)?;
+		let image_depth =
+			Self::make_transient_input_attachment(shared.shaders.device.clone(), dimensions, DEPTH_FORMAT)?;
 
 		let framebuffers =
 			target.images().iter()
@@ -64,9 +64,9 @@ impl MeshBatch {
 		let desc_target =
 			Arc::new(
 				PersistentDescriptorSet::start(shared.pipeline_target.clone(), 0)
-					.add_image(image_color.clone())
+					.add_image(image_color)
 					.unwrap()
-					.add_image(image_normal.clone())
+					.add_image(image_normal)
 					.unwrap()
 					.build()
 					.unwrap()
@@ -80,9 +80,6 @@ impl MeshBatch {
 			meshes: vec![],
 			framebuffers: framebuffers,
 			target_id: target.id_root().make_id(),
-			image_color: image_color,
-			image_normal: image_normal,
-			image_depth: image_depth,
 			desc_target: desc_target,
 			camera_desc_pool: camera_desc_pool,
 			mesh_desc_pool: mesh_desc_pool,
@@ -114,24 +111,27 @@ impl MeshBatch {
 			if let Some(framebuffer) = framebuffer.as_ref() {
 				framebuffer.clone()
 			} else {
-				self.image_color = Self::make_transient_input_attachment(window.device().clone(), dimensions, target.format())?;
-				self.image_normal = Self::make_transient_input_attachment(window.device().clone(), dimensions, NORMAL_FORMAT)?;
-				self.image_depth = Self::make_transient_input_attachment(window.device().clone(), dimensions, DEPTH_FORMAT)?;
+				let image_color =
+					Self::make_transient_input_attachment(window.device().clone(), dimensions, target.format())?;
+				let image_normal =
+					Self::make_transient_input_attachment(window.device().clone(), dimensions, NORMAL_FORMAT)?;
+				let image_depth =
+					Self::make_transient_input_attachment(window.device().clone(), dimensions, DEPTH_FORMAT)?;
 				self.desc_target =
 					Arc::new(
 						PersistentDescriptorSet::start(self.shared.pipeline_target.clone(), 0)
-							.add_image(self.image_color.clone())
+							.add_image(image_color.clone())
 							.unwrap()
-							.add_image(self.image_normal.clone())
+							.add_image(image_normal.clone())
 							.unwrap()
 							.build()
 							.unwrap()
 					);
 
 				let framebuffer = Framebuffer::start(self.shared.subpass_gbuffers.render_pass().clone())
-					.add(self.image_color.clone())
-					.and_then(|fb| fb.add(self.image_normal.clone()))
-					.and_then(|fb| fb.add(self.image_depth.clone()))
+					.add(image_color)
+					.and_then(|fb| fb.add(image_normal))
+					.and_then(|fb| fb.add(image_depth))
 					.and_then(|fb| fb.add(target.images()[image_num].clone()))
 					.and_then(|fb| fb.build())
 					.map(|fb| Arc::new(fb))
