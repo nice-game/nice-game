@@ -1,7 +1,6 @@
-use { CPU_POOL, FS_POOL, cpu_pool::{ CpuFuture, DiskCpuFuture } };
-use futures::prelude::*;
+use { cpu_pool::{ cpu_pool, fs_pool, DiskCpuFuture } };
 use nom::{ is_space, space };
-use std::{ fs::File, io::{ self, prelude::* }, path::{ Path, PathBuf } };
+use std::{ fs::File, io::prelude::*, path::{ Path, PathBuf } };
 
 pub struct Obj {
 
@@ -12,12 +11,12 @@ impl Obj {
 	}
 
 	pub fn from_file<P: AsRef<Path> + Send + 'static>(path: P) -> DiskCpuFuture<Obj, String> {
-		let future = FS_POOL.lock().unwrap()
+		let future = fs_pool().lock().unwrap()
 			.dispatch(move |_| {
 				let mut buf = String::new();
 				File::open(path)?.read_to_string(&mut buf)?;
 
-				Ok(CPU_POOL.lock().unwrap().dispatch(move |_| Ok(obj(&buf).map_err(|err| format!("{}", err))?.1)))
+				Ok(cpu_pool().lock().unwrap().dispatch(move |_| Ok(obj(&buf).map_err(|err| format!("{}", err))?.1)))
 			});
 
 		DiskCpuFuture::new(future)

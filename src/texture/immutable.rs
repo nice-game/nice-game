@@ -1,5 +1,4 @@
-use { CPU_POOL, FS_POOL };
-use cpu_pool::CpuFuture;
+use cpu_pool::{ cpu_pool, fs_pool, CpuFuture };
 use futures::prelude::*;
 use image::{ self, ImageError, ImageFormat };
 use std::{ fs::File, io::{ self, prelude::* }, path::Path, sync::Arc };
@@ -21,12 +20,12 @@ impl ImmutableTexture {
 	pub fn from_file_with_format<P>(window: &Window, path: P, format: ImageFormat) -> TextureFuture
 	where P: AsRef<Path> + Send + 'static {
 		let queue = window.queue().clone();
-		let future = FS_POOL.lock().unwrap()
+		let future = fs_pool().lock().unwrap()
 			.dispatch(move |_| {
 				let mut bytes = vec![];
 				File::open(path)?.read_to_end(&mut bytes)?;
 
-				let future = CPU_POOL.lock().unwrap()
+				let future = cpu_pool().lock().unwrap()
 					.dispatch(move |_| {
 						let img = image::load_from_memory_with_format(&bytes, format)?.to_rgba();
 						let (width, height) = img.dimensions();
