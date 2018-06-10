@@ -3,6 +3,10 @@ extern crate futures;
 extern crate image;
 #[macro_use]
 extern crate lazy_static;
+#[macro_use]
+extern crate log;
+#[macro_use]
+extern crate nom;
 extern crate num_cpus;
 #[macro_use]
 extern crate vulkano;
@@ -16,6 +20,7 @@ pub mod cpu_pool;
 pub mod batch;
 pub mod texture;
 pub mod window;
+mod codec;
 
 pub use vulkano::{ command_buffer::CommandBuffer, instance::Version, sync::GpuFuture };
 
