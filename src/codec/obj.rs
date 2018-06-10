@@ -1,4 +1,4 @@
-use { cpu_pool::{ cpu_pool, fs_pool, DiskCpuFuture } };
+use { cpu_pool::{ spawn_cpu, spawn_fs, DiskCpuFuture } };
 use nom::{ is_space, space };
 use std::{ fs::File, io::prelude::*, path::{ Path, PathBuf } };
 
@@ -11,12 +11,12 @@ impl Obj {
 	}
 
 	pub fn from_file<P: AsRef<Path> + Send + 'static>(path: P) -> DiskCpuFuture<Obj, String> {
-		let future = fs_pool().lock().unwrap()
-			.dispatch(move |_| {
+		let future =
+			spawn_fs(move |_| {
 				let mut buf = String::new();
 				File::open(path)?.read_to_string(&mut buf)?;
 
-				Ok(cpu_pool().lock().unwrap().dispatch(move |_| Ok(obj(&buf).map_err(|err| format!("{}", err))?.1)))
+				Ok(spawn_cpu(move |_| Ok(obj(&buf).map_err(|err| format!("{}", err))?.1)))
 			});
 
 		DiskCpuFuture::new(future)
