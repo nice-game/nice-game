@@ -7,7 +7,7 @@ use nice_game::{
 	GpuFuture,
 	RenderTarget,
 	Version,
-	sprite::{ Sprite, SpriteBatch, SpriteBatchShaders, SpriteBatchShared },
+	batch::sprite::{ Sprite, SpriteBatch, SpriteBatchShaders, SpriteBatchShared },
 	texture::{ ImageFormat, ImmutableTexture },
 	window::{ Event, EventsLoop, Window, WindowEvent },
 };

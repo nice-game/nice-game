@@ -8,7 +8,8 @@ use nice_game::{
 	GpuFuture,
 	RenderTarget,
 	Version,
-	mesh::{ Camera, Mesh, MeshBatch, MeshBatchShaders, MeshBatchShared, MeshVertex },
+	batch::mesh::{ Mesh, MeshBatch, MeshBatchShaders, MeshBatchShared, MeshVertex },
+	camera::Camera,
 	window::{ Event, EventsLoop, Window, WindowEvent },
 };
 
@@ -45,7 +46,7 @@ fn main() {
 		[0.0, 0.0, 2.0]
 	).unwrap();
 
-	let mut mesh_batch = MeshBatch::new(&window, &window, mesh_batch_shared).unwrap();
+	let mut mesh_batch = MeshBatch::new(&window, mesh_batch_shared).unwrap();
 	mesh_batch.add_mesh(mesh);
 
 	let mut camera = make_camera(&window);
