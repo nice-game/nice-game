@@ -1,5 +1,19 @@
 use futures::{ channel::oneshot, executor::ThreadPool, future::{ lazy, ok }, prelude::* };
-use std::io;
+use num_cpus;
+use std::{ io, cmp::min, sync::Mutex };
+
+lazy_static! {
+	static ref CPU_POOL: Mutex<CpuPool> = Mutex::new(CpuPool::new(min(1, num_cpus::get() - 1)));
+	static ref FS_POOL: Mutex<CpuPool> = Mutex::new(CpuPool::new(1));
+}
+
+pub fn cpu_pool() -> &'static Mutex<CpuPool> {
+	&CPU_POOL
+}
+
+pub fn fs_pool() -> &'static Mutex<CpuPool> {
+	&FS_POOL
+}
 
 pub struct CpuPool {
 	pool: ThreadPool,

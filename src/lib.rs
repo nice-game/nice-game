@@ -24,27 +24,13 @@ mod codec;
 
 pub use vulkano::{ command_buffer::CommandBuffer, instance::Version, sync::GpuFuture };
 
-use cpu_pool::CpuPool;
-use std::{ cmp::min, sync::{ Arc, Mutex, Weak } };
+use std::sync::{ Arc, Weak };
 use vulkano::{
 	format::Format,
 	framebuffer::FramebufferAbstract,
 	image::ImageViewAccess,
 	instance::{ ApplicationInfo, Instance, InstanceCreationError },
 };
-
-lazy_static! {
-	static ref CPU_POOL: Mutex<CpuPool> = Mutex::new(CpuPool::new(min(1, num_cpus::get() - 1)));
-	static ref FS_POOL: Mutex<CpuPool> = Mutex::new(CpuPool::new(1));
-}
-
-pub fn cpu_pool() -> &'static Mutex<CpuPool> {
-	&CPU_POOL
-}
-
-pub fn fs_pool() -> &'static Mutex<CpuPool> {
-	&FS_POOL
-}
 
 /// Root struct for this library. Any windows that are created using the same context will share some resources.
 pub struct Context {
