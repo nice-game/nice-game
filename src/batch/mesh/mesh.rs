@@ -1,5 +1,8 @@
 use batch::mesh::MeshBatchShared;
-use std::sync::Arc;
+use codec::obj::Obj;
+use cpu_pool::{ spawn_fs_then_cpu, DiskCpuFuture };
+use nom;
+use std::{ fs::File, io::prelude::*, path::Path, sync::Arc };
 use vulkano::{
 	OomError,
 	buffer::{ BufferUsage, ImmutableBuffer },
@@ -32,6 +35,25 @@ impl Mesh {
 			ImmutableBuffer::from_data(position, BufferUsage::uniform_buffer(), window.queue().clone())?;
 
 		Ok((Self { position: position, vertices: vertices }, vertices_future.join(position_future)))
+	}
+
+	pub fn from_file<P: AsRef<Path> + Send + 'static>(path: P) -> DiskCpuFuture<Obj, nom::Err<String>> {
+		spawn_fs_then_cpu(
+			|_| {
+				let mut buf = String::new();
+				File::open(path)?.read_to_string(&mut buf).map(|_| buf)
+			},
+			|_, buf| {
+				Obj::from_str(&buf)
+					.map_err(|err| match err {
+						nom::Err::Error(nom::Context::Code(loc, kind)) =>
+							nom::Err::Error(nom::Context::Code(loc.to_owned(), kind)),
+						nom::Err::Failure(nom::Context::Code(loc, kind)) =>
+							nom::Err::Failure(nom::Context::Code(loc.to_owned(), kind)),
+						err => unreachable!(err),
+					})
+			}
+		)
 	}
 
 	pub(super) fn make_commands(
