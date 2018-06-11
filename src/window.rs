@@ -62,7 +62,7 @@ pub struct Window {
 impl Window {
 	pub fn new<T: Into<String>>(ctx: &Context, events: &mut EventsLoop, title: T) -> Self {
 		let pdevice = PhysicalDevice::enumerate(&ctx.instance).next().expect("no device available");
-		println!("Using device: {} (type: {:?})", pdevice.name(), pdevice.ty());
+		info!("Using device: {} (type: {:?})", pdevice.name(), pdevice.ty());
 
 		let surface = winit::WindowBuilder::new()
 			.with_title(title)

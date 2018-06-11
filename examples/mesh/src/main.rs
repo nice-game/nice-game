@@ -1,8 +1,10 @@
 extern crate cgmath;
 extern crate futures;
 extern crate nice_game;
+extern crate simplelog;
 
 use cgmath::{ One, Quaternion, Vector3, Zero };
+use futures::executor::block_on;
 use nice_game::{
 	Context,
 	GpuFuture,
@@ -12,8 +14,15 @@ use nice_game::{
 	camera::Camera,
 	window::{ Event, EventsLoop, Window, WindowEvent },
 };
+use simplelog::{ LevelFilter, SimpleLogger };
 
 fn main() {
+	SimpleLogger::init(LevelFilter::Warn, simplelog::Config::default()).unwrap();
+
+	// test obj parser
+	block_on(Mesh::from_file("examples/assets/sphere.obj")).map(|_| ()).unwrap_or_else(|err| println!("{:#?}", err));
+	// end test
+
 	let mut events = EventsLoop::new();
 
 	let mut window =
