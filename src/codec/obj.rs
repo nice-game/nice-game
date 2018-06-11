@@ -18,6 +18,16 @@ impl Obj {
 }
 
 #[derive(Debug)]
+pub struct Face {
+	vertices: Vec<FaceVertex>,
+}
+impl Face {
+	fn new(vertices: Vec<FaceVertex>) -> Self {
+		Self { vertices: vertices }
+	}
+}
+
+#[derive(Debug)]
 pub struct FaceVertex {
 	position: usize,
 	texture: Option<usize>,
@@ -26,16 +36,6 @@ pub struct FaceVertex {
 impl FaceVertex {
 	fn new(position: usize, texture: Option<usize>, normal: Option<usize>) -> Self {
 		Self { position: position, texture: texture, normal: normal }
-	}
-}
-
-#[derive(Debug)]
-pub struct Face {
-	vertices: Vec<FaceVertex>,
-}
-impl Face {
-	fn new(vertices: Vec<FaceVertex>) -> Self {
-		Self { vertices: vertices }
 	}
 }
 
