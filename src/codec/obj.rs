@@ -126,36 +126,30 @@ named!(face<&str, Face>,
 	do_parse!(
 		tag!("f") >>
 		face_vertices:
-			many1!(
-				do_parse!(
-					space >>
-					v: map!(return_error!(ErrorKind::Digit, digit), |v| v.parse().unwrap()) >>
-					vtn:
-						map!(
-							opt!(
-								do_parse!(
+			many1!(do_parse!(
+				space >>
+				v: map!(return_error!(ErrorKind::Digit, digit), |v| v.parse().unwrap()) >>
+				vtn:
+					map!(
+						opt!(do_parse!(
+							tag!("/") >>
+							vt:
+								alt!(
+									map!(digit, |vt| Some(vt.parse().unwrap())) |
+									map!(peek!(tag!("/")), |_| None)
+								) >>
+							vn:
+								opt!(do_parse!(
 									tag!("/") >>
-									vt:
-										alt!(
-											map!(digit, |vt| Some(vt.parse().unwrap())) |
-											map!(peek!(tag!("/")), |_| None)
-										) >>
-									vn:
-										opt!(
-											do_parse!(
-												tag!("/") >>
-												vn: map!(digit, |vt| vt.parse().unwrap()) >>
-												(vn)
-											)
-										) >>
-									(vt, vn)
-								)
-							),
-							|vtn| vtn.unwrap_or((None, None))
-						) >>
-					(FaceVertex::new(v, vtn.0, vtn.1))
-				)
-			) >>
+									vn: map!(digit, |vt| vt.parse().unwrap()) >>
+									(vn)
+								)) >>
+							(vt, vn)
+						)),
+						|vtn| vtn.unwrap_or((None, None))
+					) >>
+				(FaceVertex::new(v, vtn.0, vtn.1))
+			)) >>
 		space0 >>
 		line_ending >>
 		(Face::new(face_vertices))
