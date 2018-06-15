@@ -1,5 +1,5 @@
 use batch::mesh::MeshBatchShared;
-use cgmath::InnerSpace;
+use cgmath::{ InnerSpace, Vector4 };
 use codec::obj::Obj;
 use cpu_pool::{ spawn_fs_then_cpu, DiskCpuFuture };
 use nom;
@@ -63,7 +63,7 @@ impl Mesh {
 				let mut vertices = vec![];
 				for object in once(&obj.root_object).chain(obj.named_objects.iter().map(|(_, o)| o)) {
 					for face in &object.faces {
-						for triangle in triangulate(face.vertices.len()) {
+						for triangle in triangulate(face.vertices.iter().map(|v| object.vertices[v.position - 1])) {
 							let positions = [
 								object.vertices[face.vertices[triangle[0]].position - 1].xyz(),
 								object.vertices[face.vertices[triangle[1]].position - 1].xyz(),
@@ -151,6 +151,25 @@ impl MeshVertex {
 }
 impl_vertex!(MeshVertex, position, normal);
 
-fn triangulate(vertex_count: usize) -> impl Iterator<Item = [usize; 3]> {
-	(2..vertex_count - 1).map(|i| [0, i - 1, i])
+fn triangulate<'a>(mut vertices: impl ExactSizeIterator<Item = Vector4<f32>>) -> impl Iterator<Item = [usize; 3]> {
+	let v0 = vertices.next().unwrap();
+	let v1 = vertices.next().unwrap();
+	vertices
+		.enumerate()
+		.scan(
+			(v0, v1),
+			|(v0, vprev), (i, vcur)| {
+				let i = i + 2;
+				let angle = (*v0 - *vprev).angle(*vprev - vcur);
+				*vprev = vcur;
+
+				if angle.0 > 0.0 {
+					Some([0, i - 1, i])
+				} else if angle.0 < 0.0 {
+					Some([i, i - 1, 0])
+				} else {
+					panic!("Triangle must not be a line.");
+				}
+			}
+		)
 }
