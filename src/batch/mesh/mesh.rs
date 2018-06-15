@@ -1,8 +1,9 @@
 use batch::mesh::MeshBatchShared;
+use cgmath::InnerSpace;
 use codec::obj::Obj;
 use cpu_pool::{ spawn_fs_then_cpu, DiskCpuFuture };
 use nom;
-use std::{ fs::File, io::prelude::*, path::Path, sync::Arc };
+use std::{ fs::File, io::prelude::*, iter::once, path::Path, sync::Arc };
 use vulkano::{
 	OomError,
 	buffer::{ BufferUsage, ImmutableBuffer },
@@ -25,8 +26,7 @@ impl Mesh {
 		vertices: D,
 		position: [f32; 3],
 	) -> Result<(Self, impl GpuFuture), DeviceMemoryAllocError>
-	where
-		D: ExactSizeIterator<Item = MeshVertex>,
+	where D: ExactSizeIterator<Item = MeshVertex>,
 	{
 		let (vertices, vertices_future) =
 			ImmutableBuffer::from_iter(vertices, BufferUsage::vertex_buffer(), window.queue().clone())?;
@@ -37,21 +37,59 @@ impl Mesh {
 		Ok((Self { position: position, vertices: vertices }, vertices_future.join(position_future)))
 	}
 
-	pub fn from_file<P: AsRef<Path> + Send + 'static>(path: P) -> DiskCpuFuture<Obj, nom::Err<String>> {
+	pub fn from_file<P>(
+		window: &Window,
+		position: [f32; 3],
+		path: P
+	) -> DiskCpuFuture<(Self, impl GpuFuture + Send + Sync + 'static), MeshFromFileError>
+	where P: AsRef<Path> + Send + 'static
+	{
+		let queue = window.queue().clone();
 		spawn_fs_then_cpu(
 			|_| {
 				let mut buf = String::new();
 				File::open(path)?.read_to_string(&mut buf).map(|_| buf)
 			},
-			|_, buf| {
-				Obj::from_str(&buf)
+			move |_, buf| {
+				let obj = Obj::from_str(&buf)
 					.map_err(|err| match err {
 						nom::Err::Error(nom::Context::Code(loc, kind)) =>
 							nom::Err::Error(nom::Context::Code(loc.to_owned(), kind)),
 						nom::Err::Failure(nom::Context::Code(loc, kind)) =>
 							nom::Err::Failure(nom::Context::Code(loc.to_owned(), kind)),
 						err => unreachable!(err),
-					})
+					})?;
+
+				let mut vertices = vec![];
+				for object in once(&obj.root_object).chain(obj.named_objects.iter().map(|(_, o)| o)) {
+					for face in &object.faces {
+						for triangle in triangulate(face.vertices.len()) {
+							let positions = [
+								object.vertices[face.vertices[triangle[0]].position - 1].xyz(),
+								object.vertices[face.vertices[triangle[1]].position - 1].xyz(),
+								object.vertices[face.vertices[triangle[2]].position - 1].xyz(),
+							];
+
+							let mut face_normal = None;
+
+							for i in 0..triangle.len() {
+								let normal = *face.vertices[triangle[0]].normal.map(|i| &object.normals[i - 1])
+									.unwrap_or_else(|| face_normal.get_or_insert_with(|| {
+										(positions[1] - positions[0]).cross(positions[2] - positions[0]).normalize()
+									}));
+								vertices.push(MeshVertex::new(positions[i].into(), normal.into()));
+							}
+						}
+					}
+				}
+
+				let (vertices, vertices_future) =
+					ImmutableBuffer::from_iter(vertices.into_iter(), BufferUsage::vertex_buffer(), queue.clone())?;
+
+				let (position, position_future) =
+					ImmutableBuffer::from_data(position, BufferUsage::uniform_buffer(), queue)?;
+
+				Ok((Self { position: position, vertices: vertices }, vertices_future.join(position_future)))
 			}
 		)
 	}
@@ -85,9 +123,34 @@ impl Mesh {
 	}
 }
 
+#[derive(Debug)]
+pub enum MeshFromFileError {
+	Nom(nom::Err<String>),
+	DeviceMemoryAllocError(DeviceMemoryAllocError),
+}
+impl From<nom::Err<String>> for MeshFromFileError{
+	fn from(err: nom::Err<String>) -> Self {
+		MeshFromFileError::Nom(err)
+	}
+}
+impl From<DeviceMemoryAllocError> for MeshFromFileError{
+	fn from(err: DeviceMemoryAllocError) -> Self {
+		MeshFromFileError::DeviceMemoryAllocError(err)
+	}
+}
+
 #[derive(Debug, Clone)]
 pub struct MeshVertex {
 	pub position: [f32; 3],
 	pub normal: [f32; 3],
 }
+impl MeshVertex {
+	pub fn new(position: [f32; 3], normal: [f32; 3]) -> Self {
+		Self { position: position, normal: normal }
+	}
+}
 impl_vertex!(MeshVertex, position, normal);
+
+fn triangulate(vertex_count: usize) -> impl Iterator<Item = [usize; 3]> {
+	(2..vertex_count - 1).map(|i| [0, i - 1, i])
+}

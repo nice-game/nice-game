@@ -10,18 +10,14 @@ use nice_game::{
 	GpuFuture,
 	RenderTarget,
 	Version,
-	batch::mesh::{ Mesh, MeshBatch, MeshBatchShaders, MeshBatchShared, MeshVertex },
+	batch::mesh::{ Mesh, MeshBatch, MeshBatchShaders, MeshBatchShared },
 	camera::Camera,
 	window::{ Event, EventsLoop, Window, WindowEvent },
 };
 use simplelog::{ LevelFilter, SimpleLogger };
 
 fn main() {
-	SimpleLogger::init(LevelFilter::Warn, simplelog::Config::default()).unwrap();
-
-	// test obj parser
-	block_on(Mesh::from_file("examples/assets/sphere.obj")).map(|_| ()).unwrap_or_else(|err| println!("{:#?}", err));
-	// end test
+	SimpleLogger::init(LevelFilter::Info, simplelog::Config::default()).unwrap();
 
 	let mut events = EventsLoop::new();
 
@@ -39,21 +35,10 @@ fn main() {
 			"nIce Game"
 		);
 
+	let (mesh, mesh_future) = block_on(Mesh::from_file(&window, [0.0, 0.0, 3.0], "examples/assets/sphere.obj")).unwrap();
+
 	let (mesh_batch_shaders, mesh_batch_shaders_future) = MeshBatchShaders::new(&mut window).unwrap();
 	let mesh_batch_shared = MeshBatchShared::new(mesh_batch_shaders, window.format());
-
-	let (mesh, mesh_future) = Mesh::new(
-		&window,
-		vec![
-			MeshVertex { position: [-1.0, -1.0, 0.0], normal:  [0.0, 0.0, -1.0] },
-			MeshVertex { position: [1.0, -1.0, 0.0], normal:  [0.0, 0.0, -1.0] },
-			MeshVertex { position: [-1.0, 1.0, 0.0], normal:  [0.0, 0.0, -1.0] },
-			MeshVertex { position: [-1.0, 1.0, 0.0], normal:  [0.0, 0.0, -1.0] },
-			MeshVertex { position: [1.0, -1.0, 0.0], normal:  [0.0, 0.0, -1.0] },
-			MeshVertex { position: [1.0, 1.0, 0.0], normal:  [0.0, 0.0, -1.0] },
-		].into_iter(),
-		[0.0, 0.0, 2.0]
-	).unwrap();
 
 	let mut mesh_batch = MeshBatch::new(&window, mesh_batch_shared).unwrap();
 	mesh_batch.add_mesh(mesh);

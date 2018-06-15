@@ -3,8 +3,8 @@ use nom::{ self, alphanumeric, digit, float_s, line_ending, space, space0 };
 use std::{ mem, path::Path };
 
 pub struct Obj {
-	root_object: Object,
-	named_objects: Vec<(String, Object)>,
+	pub root_object: Object,
+	pub named_objects: Vec<(String, Object)>,
 }
 impl Obj {
 	pub fn from_str(s: &str) -> Result<Self, nom::Err<&str>> {
@@ -19,7 +19,7 @@ impl Obj {
 
 #[derive(Debug)]
 pub struct Face {
-	vertices: Vec<FaceVertex>,
+	pub vertices: Vec<FaceVertex>,
 }
 impl Face {
 	fn new(vertices: Vec<FaceVertex>) -> Self {
@@ -29,9 +29,9 @@ impl Face {
 
 #[derive(Debug)]
 pub struct FaceVertex {
-	position: usize,
-	texture: Option<usize>,
-	normal: Option<usize>,
+	pub position: usize,
+	pub texture: Option<usize>,
+	pub normal: Option<usize>,
 }
 impl FaceVertex {
 	fn new(position: usize, texture: Option<usize>, normal: Option<usize>) -> Self {
@@ -40,9 +40,9 @@ impl FaceVertex {
 }
 
 pub struct Object {
-	vertices: Vec<Vector4<f32>>,
-	normals: Vec<Vector3<f32>>,
-	faces: Vec<Face>,
+	pub vertices: Vec<Vector4<f32>>,
+	pub normals: Vec<Vector3<f32>>,
+	pub faces: Vec<Face>,
 }
 impl Object {
 	fn new() -> Self {
