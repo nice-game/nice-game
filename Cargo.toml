@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["IcyDefiance <icydefiance@gmail.com>"]
 
 [dependencies]
-cgmath = "0.16"
+cgmath = { version = "0.16", features = ["swizzle"] }
 futures = "0.2"
 image = "0.19"
 lazy_static = "1.0"

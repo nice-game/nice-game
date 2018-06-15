@@ -3,6 +3,9 @@ name = "sprite"
 version = "0.1.0"
 authors = ["IcyDefiance <icydefiance@gmail.com>"]
 
+[profile.release]
+lto = true
+
 [dependencies]
 futures = "0.2"
 nice-game = { path = "../../" }
