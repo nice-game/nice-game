@@ -3,8 +3,12 @@ name = "nice-game"
 version = "0.1.0"
 authors = ["IcyDefiance <icydefiance@gmail.com>"]
 
+[profile.release]
+lto = true
+
 [dependencies]
 cgmath = { version = "0.16", features = ["swizzle"] }
+decorum = "0.0"
 futures = "0.2"
 image = "0.19"
 lazy_static = "1.0"
