@@ -2,6 +2,7 @@ use cgmath::{ vec3, vec4, Vector3, Vector4 };
 use nom::{ self, alphanumeric, digit, float_s, line_ending, space, space0 };
 use std::{ mem, path::Path };
 
+#[derive(Clone, Debug, PartialEq)]
 pub struct Obj {
 	pub root_object: Object,
 	pub named_objects: Vec<(String, Object)>,
@@ -17,7 +18,7 @@ impl Obj {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Face {
 	pub vertices: Vec<FaceVertex>,
 }
@@ -27,7 +28,7 @@ impl Face {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug,  PartialEq, Eq, Hash)]
 pub struct FaceVertex {
 	pub position: usize,
 	pub texture: Option<usize>,
@@ -39,6 +40,7 @@ impl FaceVertex {
 	}
 }
 
+#[derive(Clone, Debug, PartialEq)]
 pub struct Object {
 	pub vertices: Vec<Vector4<f32>>,
 	pub normals: Vec<Vector3<f32>>,
@@ -50,6 +52,7 @@ impl Object {
 	}
 }
 
+#[derive(Clone, Debug, PartialEq)]
 struct ObjBuilder {
 	root_object: Option<Object>,
 	named_objects: Vec<(String, Object)>,
@@ -94,6 +97,7 @@ impl ObjBuilder {
 	}
 }
 
+#[derive(Clone, Debug,  PartialEq)]
 enum Line<'a> {
 	Empty,
 	Face(Face),
