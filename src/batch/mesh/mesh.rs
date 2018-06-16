@@ -2,8 +2,9 @@ use batch::mesh::MeshBatchShared;
 use cgmath::{ InnerSpace, Vector4 };
 use codec::obj::Obj;
 use cpu_pool::{ spawn_fs_then_cpu, DiskCpuFuture };
+use decorum::hash_float_array;
 use nom;
-use std::{ fs::File, io::prelude::*, iter::once, path::Path, sync::Arc };
+use std::{ collections::HashMap, fs::File, hash::{ Hash, Hasher }, io::prelude::*, iter::once, path::Path, sync::Arc };
 use vulkano::{
 	OomError,
 	buffer::{ BufferUsage, ImmutableBuffer },
@@ -70,15 +71,18 @@ impl Mesh {
 								object.vertices[face.vertices[triangle[2]].position - 1].xyz(),
 							];
 
-							let mut face_normal = None;
+							let mut triangle_normal =
+								(positions[1] - positions[0]).cross(positions[2] - positions[0]).normalize();
 
-							for i in 0..triangle.len() {
-								let normal = *face.vertices[triangle[0]].normal.map(|i| &object.normals[i - 1])
-									.unwrap_or_else(|| face_normal.get_or_insert_with(|| {
-										(positions[1] - positions[0]).cross(positions[2] - positions[0]).normalize()
-									}));
-								vertices.push(MeshVertex::new(positions[i].into(), normal.into()));
-							}
+							vertices.extend(
+								(0..triangle.len())
+									.map(|ti| MeshVertex::new(
+										positions[ti].into(),
+										face.vertices[triangle[ti]].normal.map(|ni| object.normals[ni - 1])
+											.unwrap_or(triangle_normal)
+											.into()
+									))
+							);
 						}
 					}
 				}
@@ -139,7 +143,7 @@ impl From<DeviceMemoryAllocError> for MeshFromFileError{
 	}
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MeshVertex {
 	pub position: [f32; 3],
 	pub normal: [f32; 3],
@@ -147,6 +151,12 @@ pub struct MeshVertex {
 impl MeshVertex {
 	pub fn new(position: [f32; 3], normal: [f32; 3]) -> Self {
 		Self { position: position, normal: normal }
+	}
+}
+impl Hash for MeshVertex {
+	fn hash<H: Hasher>(&self, state: &mut H) {
+		hash_float_array(&self.position, state);
+		hash_float_array(&self.normal, state);
 	}
 }
 impl_vertex!(MeshVertex, position, normal);
