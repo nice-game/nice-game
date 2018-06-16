@@ -128,20 +128,20 @@ named!(face<&str, Face>,
 		face_vertices:
 			many1!(do_parse!(
 				space >>
-				v: map!(return_error!(ErrorKind::Digit, digit), |v| v.parse().unwrap()) >>
+				v: map!(return_error!(ErrorKind::Digit, digit), |v| v.parse::<usize>().unwrap() - 1) >>
 				vtn:
 					map!(
 						opt!(do_parse!(
 							tag!("/") >>
 							vt:
 								alt!(
-									map!(digit, |vt| Some(vt.parse().unwrap())) |
+									map!(digit, |vt| Some(vt.parse::<usize>().unwrap() - 1)) |
 									map!(peek!(tag!("/")), |_| None)
 								) >>
 							vn:
 								opt!(do_parse!(
 									tag!("/") >>
-									vn: map!(digit, |vt| vt.parse().unwrap()) >>
+									vn: map!(digit, |vt| vt.parse::<usize>().unwrap() - 1) >>
 									(vn)
 								)) >>
 							(vt, vn)
