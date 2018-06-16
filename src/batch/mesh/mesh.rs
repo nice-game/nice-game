@@ -64,11 +64,11 @@ impl Mesh {
 				let mut vertices = vec![];
 				for object in once(&obj.root_object).chain(obj.named_objects.iter().map(|(_, o)| o)) {
 					for face in &object.faces {
-						for triangle in triangulate(face.vertices.iter().map(|v| object.vertices[v.position - 1])) {
+						for triangle in triangulate(face.vertices.iter().map(|v| object.vertices[v.position])) {
 							let positions = [
-								object.vertices[face.vertices[triangle[0]].position - 1].xyz(),
-								object.vertices[face.vertices[triangle[1]].position - 1].xyz(),
-								object.vertices[face.vertices[triangle[2]].position - 1].xyz(),
+								object.vertices[face.vertices[triangle[0]].position].xyz(),
+								object.vertices[face.vertices[triangle[1]].position].xyz(),
+								object.vertices[face.vertices[triangle[2]].position].xyz(),
 							];
 
 							let mut triangle_normal =
@@ -78,7 +78,7 @@ impl Mesh {
 								(0..triangle.len())
 									.map(|ti| MeshVertex::new(
 										positions[ti].into(),
-										face.vertices[triangle[ti]].normal.map(|ni| object.normals[ni - 1])
+										face.vertices[triangle[ti]].normal.map(|ni| object.normals[ni])
 											.unwrap_or(triangle_normal)
 											.into()
 									))
