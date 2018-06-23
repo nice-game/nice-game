@@ -63,9 +63,6 @@ impl Mesh {
 			let index_count = file.read_u32::<LE>()? as usize;
 			let indices_offset = file.read_u32::<LE>()? as u64;
 
-			println!("{}, {}", vertex_count, index_count);
-
-			println!("{}", positions_offset);
 			file.seek(SeekFrom::Start(positions_offset))?;
 			let (positions, positions_future) =
 				Self::buffer_from_file(
@@ -75,7 +72,6 @@ impl Mesh {
 					&mut || Ok([file.read_f32::<LE>()?, file.read_f32::<LE>()?, file.read_f32::<LE>()?])
 				)?;
 
-			println!("{}", normals_offset);
 			file.seek(SeekFrom::Start(normals_offset))?;
 			let (normals, normals_future) =
 				Self::buffer_from_file(
@@ -85,7 +81,6 @@ impl Mesh {
 					&mut || Ok([file.read_f32::<LE>()?, file.read_f32::<LE>()?, file.read_f32::<LE>()?])
 				)?;
 
-			println!("{}", texcoords_main_offset);
 			file.seek(SeekFrom::Start(texcoords_main_offset))?;
 			let (texcoords_main, texcoords_main_future) =
 				Self::buffer_from_file(
