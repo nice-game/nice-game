@@ -4,7 +4,7 @@ use cpu_pool::{ spawn_fs, CpuFuture };
 use std::{
 	fs::File,
 	io::{ self, prelude::*, SeekFrom },
-	mem::size_of,
+	mem::{ size_of, transmute },
 	path::{ Path, PathBuf },
 	sync::Arc,
 	vec::IntoIter as VecIntoIter,
@@ -32,9 +32,8 @@ pub struct Mesh {
 	positions: Arc<ImmutableBuffer<[[f32; 3]]>>,
 	normals: Arc<ImmutableBuffer<[[f32; 3]]>>,
 	texcoords_main: Arc<ImmutableBuffer<[[f32; 2]]>>,
-	indices: Arc<ImmutableBuffer<[u32]>>,
 	materials: Vec<Material>,
-	material_buf: Arc<ImmutableBuffer<[MaterialGpu]>>,
+	material_buf: Arc<ImmutableBuffer<[u8]>>,
 }
 impl Mesh {
 	pub fn from_file<P>(
@@ -115,10 +114,22 @@ impl Mesh {
 				)?;
 
 			file.seek(SeekFrom::Start(materials_offset))?;
+
+			// round MaterialGpu size up to minimum alignment
+			let mut stride = queue.device().physical_device().limits().min_uniform_buffer_offset_alignment() as usize;
+			stride = (size_of::<MaterialGpu>() + stride - 1) / stride * stride;
+
 			let mut materials = Vec::with_capacity(material_count);
-			let mut material_buf = Vec::with_capacity(material_count);
+			let material_buf =
+				unsafe {
+					CpuAccessibleBuffer::uninitialized_array(
+						queue.device().clone(),
+						material_count * stride,
+						BufferUsage::transfer_source()
+					)?
+				};
 			let mut index_start = 0;
-			for _ in 0..material_count {
+			for i in 0..material_count {
 				let index_count = file.read_u32::<LE>()? as usize;
 
 				materials
@@ -127,35 +138,43 @@ impl Mesh {
 							indices.clone().into_buffer_slice().slice(index_start..index_start + index_count).unwrap(),
 						texture1: {
 							// skip texture for now
-							let strlen = file.read_u16::<LE>()? as i64;
-							file.seek(SeekFrom::Current(strlen))?;
+							file.seek(SeekFrom::Current(6))?;
 							None
 						},
 						texture2: {
 							// skip texture for now
-							let strlen = file.read_u16::<LE>()? as i64;
-							file.seek(SeekFrom::Current(strlen))?;
+							file.seek(SeekFrom::Current(6))?;
 							None
 						},
 					});
 
-				material_buf
-					.push(MaterialGpu {
-						light_penetration: file.read_u8()?,
-						subsurface_scattering: file.read_u8()?,
-						emissive_brightness: file.read_u16::<LE>()?,
-						base_color: {
-							let mut buf = [0; 3];
-							file.read_exact(&mut buf)?;
-							buf
-						},
-					});
+				material_buf.write().unwrap()[i * stride..i * stride + size_of::<MaterialGpu>()]
+					.copy_from_slice(
+						&unsafe {
+							transmute::<_, [u8; size_of::<MaterialGpu>()]>(
+								MaterialGpu {
+									light_penetration: file.read_u8()? as u32,
+									subsurface_scattering: file.read_u8()? as u32,
+									emissive_brightness: file.read_u16::<LE>()? as u32,
+									base_color: {
+										let mut buf = [0; 3];
+										file.read_exact(&mut buf)?;
+										[
+											(buf[0] as f32 / 255.0).powf(2.2),
+											(buf[1] as f32 / 255.0).powf(2.2),
+											(buf[2] as f32 / 255.0).powf(2.2)
+										]
+									},
+								}
+							)
+						}
+					);
 
 				index_start += index_count;
 			}
 
 			let (material_buf, material_buf_future) =
-				ImmutableBuffer::from_iter(material_buf.into_iter(), BufferUsage::uniform_buffer(), queue.clone())?;
+				ImmutableBuffer::from_buffer(material_buf, BufferUsage::uniform_buffer(), queue)?;
 
 			Ok((
 				Mesh {
@@ -163,7 +182,6 @@ impl Mesh {
 					positions: positions,
 					normals: normals,
 					texcoords_main: texcoords_main,
-					indices: indices,
 					materials: materials,
 					material_buf: material_buf,
 				},
@@ -213,7 +231,7 @@ impl Mesh {
 				shared.subpass_gbuffers.clone()
 			)?;
 
-		for mat in &self.materials {
+		for (i, mat) in self.materials.iter().enumerate() {
 			cmd = cmd
 				.draw_indexed(
 					shared.pipeline_gbuffers.clone(),
@@ -227,6 +245,20 @@ impl Mesh {
 					mat.indices.clone(),
 					(
 						camera_desc.clone(),
+						mesh_desc_pool.next()
+							.add_buffer(
+								self.material_buf.clone()
+									.into_buffer_slice()
+									.index(
+										queue_family.physical_device()
+											.limits()
+											.min_uniform_buffer_offset_alignment() as usize *
+											i
+									)
+									.unwrap())
+							.unwrap()
+							.build()
+							.unwrap(),
 						mesh_desc_pool.next().add_buffer(self.position.clone()).unwrap().build().unwrap()
 					),
 					()
@@ -301,9 +333,10 @@ struct Material {
 	texture2: Option<PathBuf>,
 }
 
+#[repr(C)]
 struct MaterialGpu {
-	light_penetration: u8,
-	subsurface_scattering: u8,
-	emissive_brightness: u16,
-	base_color: [u8; 3],
+	light_penetration: u32,
+	subsurface_scattering: u32,
+	emissive_brightness: u32,
+	base_color: [f32; 3],
 }

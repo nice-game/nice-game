@@ -75,12 +75,20 @@ layout(location = 2) in vec2 texcoord_main;
 
 layout(location = 0) out vec3 out_normal;
 layout(location = 1) out vec2 out_texcoord_main;
+layout(location = 2) out vec3 out_base_color;
 
 layout(set = 0, binding = 0) uniform CameraPos { vec3 camera_pos; };
 layout(set = 0, binding = 1) uniform CameraRot { vec4 camera_rot; };
 layout(set = 0, binding = 2) uniform CameraProj { vec4 camera_proj; };
 
-layout(set = 1, binding = 0) uniform MeshDynamic { vec3 mesh_pos; };
+layout(set = 1, binding = 0) uniform Material {
+	uint light_penetration;
+	uint subsurface_scattering;
+	uint emissive_brightness;
+	vec3 base_color;
+};
+
+layout(set = 2, binding = 0) uniform MeshDynamic { vec3 mesh_pos; };
 
 vec4 quat_inv(vec4 quat) {
 	return vec4(-quat.xyz, quat.w) / dot(quat, quat);
@@ -97,6 +105,7 @@ vec4 perspective(vec3 pos, vec4 proj) {
 void main() {
 	out_normal = quat_mul(quat_inv(camera_rot), normal);
 	out_texcoord_main = texcoord_main;
+	out_base_color = base_color;
 	gl_Position = perspective(quat_mul(quat_inv(camera_rot), position + mesh_pos - camera_pos), camera_proj);
 }"]
 	struct Dummy;
@@ -109,13 +118,14 @@ mod fs_gbuffers {
 	#[src = "#version 450
 layout(location = 0) in vec3 normal;
 layout(location = 1) in vec2 texcoord_main;
+layout(location = 2) in vec3 base_color;
 
 layout(location = 0) out vec4 out_color;
 layout(location = 1) out vec4 out_normal;
 layout(location = 2) out vec4 out_texcoord_main;
 
 void main() {
-	out_color = vec4(1);
+	out_color = vec4(base_color, 1);
 	out_normal = vec4(normal, 1);
 	out_texcoord_main = vec4(texcoord_main, 0, 1);
 }"]
@@ -148,7 +158,7 @@ layout(input_attachment_index = 1, set = 0, binding = 1) uniform subpassInput no
 layout(input_attachment_index = 2, set = 0, binding = 2) uniform subpassInput texcoord_main;
 
 void main() {
-	out_color = subpassLoad(normal);
+	out_color = subpassLoad(color);
 }
 "]
 	struct Dummy;
