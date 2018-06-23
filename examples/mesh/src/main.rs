@@ -80,7 +80,7 @@ fn make_camera(window: &Window) -> Camera {
 		Quaternion::one(),
 		width as f32 / height as f32,
 		140.0,
-		1.0,
-		1000.0
+		0.05,
+		1500.0
 	).unwrap()
 }
