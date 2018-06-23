@@ -118,6 +118,7 @@ impl Mesh {
 			// round MaterialGpu size up to minimum alignment
 			let mut stride = queue.device().physical_device().limits().min_uniform_buffer_offset_alignment() as usize;
 			stride = (size_of::<MaterialGpu>() + stride - 1) / stride * stride;
+			debug!("material stride: {}", stride);
 
 			let mut materials = Vec::with_capacity(material_count);
 			let material_buf =
