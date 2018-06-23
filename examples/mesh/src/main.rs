@@ -17,7 +17,7 @@ use nice_game::{
 use simplelog::{ LevelFilter, SimpleLogger };
 
 fn main() {
-	SimpleLogger::init(LevelFilter::Info, simplelog::Config::default()).unwrap();
+	SimpleLogger::init(LevelFilter::Debug, simplelog::Config::default()).unwrap();
 
 	let mut events = EventsLoop::new();
 
@@ -76,7 +76,7 @@ fn make_camera(window: &Window) -> Camera {
 	let [width, height] = window.images()[0].dimensions().width_height();
 	Camera::new(
 		&window,
-		vec3(10.0, 10.0, -20.0),
+		vec3(10.0, -10.0, -20.0),
 		Quaternion::one(),
 		width as f32 / height as f32,
 		140.0,

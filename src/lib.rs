@@ -31,6 +31,20 @@ use vulkano::{
 	instance::{ ApplicationInfo, Instance, InstanceCreationError },
 };
 
+/// Returns a `usize` representing the offset of the field from the beginning of the struct. Compiling with
+/// optimizations should reduce this to a constant. https://github.com/rust-lang/rfcs/issues/710
+macro_rules! offset_of {
+	($type:ident, $field:ident) => {
+		unsafe {
+			// Work with an actual instance of the type since using a null pointer is UB
+			let addr: $type = ::std::mem::uninitialized();
+			let base = &addr as *const _ as usize;
+			let path = &addr.$field as *const _ as usize;
+			path - base
+		}
+	};
+}
+
 /// Root struct for this library. Any windows that are created using the same context will share some resources.
 pub struct Context {
 	instance: Arc<Instance>,
