@@ -2,7 +2,7 @@ mod mesh;
 mod shaders;
 mod shared;
 
-pub use self::mesh::{ Mesh, MeshVertex };
+pub use self::mesh::Mesh;
 pub use self::shaders::{ MeshBatchShaders, MeshBatchShadersError };
 pub use self::shared::MeshBatchShared;
 use { ImageFramebuffer, ObjectId, RenderTarget, window::Window };
@@ -20,6 +20,7 @@ use vulkano::{
 };
 
 const NORMAL_FORMAT: Format = Format::R32G32B32A32Sfloat;
+const TEXCOORD_FORMAT: Format = Format::R32G32Sfloat;
 const DEPTH_FORMAT: Format = Format::D16Unorm;
 
 pub struct MeshBatch {
@@ -41,6 +42,8 @@ impl MeshBatch {
 			Self::make_transient_input_attachment(shared.shaders.device.clone(), dimensions, target.format())?;
 		let image_normal =
 			Self::make_transient_input_attachment(shared.shaders.device.clone(), dimensions, NORMAL_FORMAT)?;
+		let image_texcoords_main =
+			Self::make_transient_input_attachment(shared.shaders.device.clone(), dimensions, TEXCOORD_FORMAT)?;
 		let image_depth =
 			Self::make_transient_input_attachment(shared.shaders.device.clone(), dimensions, DEPTH_FORMAT)?;
 
@@ -50,6 +53,7 @@ impl MeshBatch {
 					Framebuffer::start(shared.subpass_target.render_pass().clone())
 						.add(image_color.clone())
 						.and_then(|fb| fb.add(image_normal.clone()))
+						.and_then(|fb| fb.add(image_texcoords_main.clone()))
 						.and_then(|fb| fb.add(image_depth.clone()))
 						.and_then(|fb| fb.add(image.clone()))
 						.and_then(|fb| fb.build())
@@ -67,6 +71,8 @@ impl MeshBatch {
 					.add_image(image_color)
 					.unwrap()
 					.add_image(image_normal)
+					.unwrap()
+					.add_image(image_texcoords_main)
 					.unwrap()
 					.build()
 					.unwrap()
@@ -115,6 +121,8 @@ impl MeshBatch {
 					Self::make_transient_input_attachment(window.device().clone(), dimensions, target.format())?;
 				let image_normal =
 					Self::make_transient_input_attachment(window.device().clone(), dimensions, NORMAL_FORMAT)?;
+				let image_texcoords_main =
+					Self::make_transient_input_attachment(window.device().clone(), dimensions, TEXCOORD_FORMAT)?;
 				let image_depth =
 					Self::make_transient_input_attachment(window.device().clone(), dimensions, DEPTH_FORMAT)?;
 				self.desc_target =
@@ -124,6 +132,8 @@ impl MeshBatch {
 							.unwrap()
 							.add_image(image_normal.clone())
 							.unwrap()
+							.add_image(image_texcoords_main.clone())
+							.unwrap()
 							.build()
 							.unwrap()
 					);
@@ -131,6 +141,7 @@ impl MeshBatch {
 				let framebuffer = Framebuffer::start(self.shared.subpass_gbuffers.render_pass().clone())
 					.add(image_color)
 					.and_then(|fb| fb.add(image_normal))
+					.and_then(|fb| fb.add(image_texcoords_main))
 					.and_then(|fb| fb.add(image_depth))
 					.and_then(|fb| fb.add(target.images()[image_num].clone()))
 					.and_then(|fb| fb.build())
@@ -164,7 +175,13 @@ impl MeshBatch {
 				.begin_render_pass(
 					framebuffer.clone(),
 					true,
-					vec![[0.0, 0.0, 0.0, 1.0].into(), [0.0; 4].into(), 1.0.into(), [0.0, 0.0, 0.0, 1.0].into()]
+					vec![
+						[0.0, 0.0, 0.0, 1.0].into(),
+						[0.0; 4].into(),
+						[0.0; 2].into(),
+						1.0.into(),
+						[0.0, 0.0, 0.0, 1.0].into()
+					]
 				)
 				.unwrap();
 

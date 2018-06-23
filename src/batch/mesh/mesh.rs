@@ -1,101 +1,142 @@
 use batch::mesh::MeshBatchShared;
-use cgmath::{ InnerSpace, Vector4 };
-use codec::obj::Obj;
-use cpu_pool::{ spawn_fs_then_cpu, DiskCpuFuture };
-use decorum::hash_float_array;
-use nom;
-use std::{ collections::HashMap, fs::File, hash::{ Hash, Hasher }, io::prelude::*, iter::once, path::Path, sync::Arc };
+use byteorder::{LE, ReadBytesExt};
+use cpu_pool::{ spawn_fs, CpuFuture };
+use std::{
+	fs::File,
+	io::{ self, prelude::*, SeekFrom },
+	mem::size_of,
+	path::Path,
+	sync::Arc,
+	vec::IntoIter as VecIntoIter,
+};
 use vulkano::{
 	OomError,
-	buffer::{ BufferUsage, ImmutableBuffer },
+	buffer::{ BufferAccess, BufferUsage, CpuAccessibleBuffer, ImmutableBuffer },
 	command_buffer::{ AutoCommandBuffer, AutoCommandBufferBuilder, BuildError, DynamicState },
 	descriptor::{ DescriptorSet, descriptor_set::{ FixedSizeDescriptorSetsPool } },
+	device::Queue,
+	format::Format,
 	instance::QueueFamily,
 	memory::DeviceMemoryAllocError,
-	pipeline::{ GraphicsPipelineAbstract, viewport::Viewport },
+	pipeline::{
+		GraphicsPipelineAbstract,
+		vertex::{ AttributeInfo, IncompatibleVertexDefinitionError, InputRate, VertexDefinition, VertexSource },
+		viewport::Viewport
+	},
 	sync::GpuFuture,
 };
 use window::Window;
 
 pub struct Mesh {
 	position: Arc<ImmutableBuffer<[f32; 3]>>,
-	vertices: Arc<ImmutableBuffer<[MeshVertex]>>,
+	positions: Arc<ImmutableBuffer<[[f32; 3]]>>,
+	normals: Arc<ImmutableBuffer<[[f32; 3]]>>,
+	texcoords_main: Arc<ImmutableBuffer<[[f32; 2]]>>,
+	indices: Arc<ImmutableBuffer<[u32]>>,
 }
 impl Mesh {
-	pub fn new<D>(
-		window: &Window,
-		vertices: D,
-		position: [f32; 3],
-	) -> Result<(Self, impl GpuFuture), DeviceMemoryAllocError>
-	where D: ExactSizeIterator<Item = MeshVertex>,
-	{
-		let (vertices, vertices_future) =
-			ImmutableBuffer::from_iter(vertices, BufferUsage::vertex_buffer(), window.queue().clone())?;
-
-		let (position, position_future) =
-			ImmutableBuffer::from_data(position, BufferUsage::uniform_buffer(), window.queue().clone())?;
-
-		Ok((Self { position: position, vertices: vertices }, vertices_future.join(position_future)))
-	}
-
 	pub fn from_file<P>(
 		window: &Window,
 		position: [f32; 3],
 		path: P
-	) -> DiskCpuFuture<(Self, impl GpuFuture + Send + Sync + 'static), MeshFromFileError>
+	) -> CpuFuture<(Mesh, impl GpuFuture + Send + Sync + 'static), MeshFromFileError>
 	where P: AsRef<Path> + Send + 'static
 	{
 		let queue = window.queue().clone();
-		spawn_fs_then_cpu(
-			|_| {
-				let mut buf = String::new();
-				File::open(path)?.read_to_string(&mut buf).map(|_| buf)
-			},
-			move |_, buf| {
-				let obj = Obj::from_str(&buf)
-					.map_err(|err| match err {
-						nom::Err::Error(nom::Context::Code(loc, kind)) =>
-							nom::Err::Error(nom::Context::Code(loc.to_owned(), kind)),
-						nom::Err::Failure(nom::Context::Code(loc, kind)) =>
-							nom::Err::Failure(nom::Context::Code(loc.to_owned(), kind)),
-						err => unreachable!(err),
-					})?;
+		let test = spawn_fs(move |_| {
+			let (position, position_future) =
+				ImmutableBuffer::from_data(position, BufferUsage::uniform_buffer(), queue.clone())?;
 
-				let mut vertices = vec![];
-				for object in once(&obj.root_object).chain(obj.named_objects.iter().map(|(_, o)| o)) {
-					for face in &object.faces {
-						for triangle in triangulate(face.vertices.iter().map(|v| object.vertices[v.position])) {
-							let positions = [
-								object.vertices[face.vertices[triangle[0]].position].xyz(),
-								object.vertices[face.vertices[triangle[1]].position].xyz(),
-								object.vertices[face.vertices[triangle[2]].position].xyz(),
-							];
+			let mut file = File::open(path)?;
 
-							let mut triangle_normal =
-								(positions[1] - positions[0]).cross(positions[2] - positions[0]).normalize();
+			let mut magic_number = [0; 4];
+			file.read_exact(&mut magic_number)?;
+			assert_eq!(&magic_number, b"nmdl");
 
-							vertices.extend(
-								(0..triangle.len())
-									.map(|ti| MeshVertex::new(
-										positions[ti].into(),
-										face.vertices[triangle[ti]].normal.map(|ni| object.normals[ni])
-											.unwrap_or(triangle_normal)
-											.into()
-									))
-							);
-						}
-					}
-				}
+			file.seek(SeekFrom::Current(4))?;
 
-				let (vertices, vertices_future) =
-					ImmutableBuffer::from_iter(vertices.into_iter(), BufferUsage::vertex_buffer(), queue.clone())?;
+			let vertex_count = file.read_u32::<LE>()? as usize;
+			let positions_offset = file.read_u32::<LE>()? as u64;
+			let normals_offset = file.read_u32::<LE>()? as u64;
+			let texcoords_main_offset = file.read_u32::<LE>()? as u64;
+			let _texcoords_lightmap_offset = file.read_u32::<LE>()? as u64;
+			let index_count = file.read_u32::<LE>()? as usize;
+			let indices_offset = file.read_u32::<LE>()? as u64;
 
-				let (position, position_future) =
-					ImmutableBuffer::from_data(position, BufferUsage::uniform_buffer(), queue)?;
+			println!("{}, {}", vertex_count, index_count);
 
-				Ok((Self { position: position, vertices: vertices }, vertices_future.join(position_future)))
+			println!("{}", positions_offset);
+			file.seek(SeekFrom::Start(positions_offset))?;
+			let (positions, positions_future) =
+				Self::buffer_from_file(
+					queue.clone(),
+					BufferUsage::vertex_buffer(),
+					vertex_count,
+					&mut || Ok([file.read_f32::<LE>()?, file.read_f32::<LE>()?, file.read_f32::<LE>()?])
+				)?;
+
+			println!("{}", normals_offset);
+			file.seek(SeekFrom::Start(normals_offset))?;
+			let (normals, normals_future) =
+				Self::buffer_from_file(
+					queue.clone(),
+					BufferUsage::vertex_buffer(),
+					vertex_count,
+					&mut || Ok([file.read_f32::<LE>()?, file.read_f32::<LE>()?, file.read_f32::<LE>()?])
+				)?;
+
+			println!("{}", texcoords_main_offset);
+			file.seek(SeekFrom::Start(texcoords_main_offset))?;
+			let (texcoords_main, texcoords_main_future) =
+				Self::buffer_from_file(
+					queue.clone(),
+					BufferUsage::vertex_buffer(),
+					vertex_count,
+					&mut || Ok([file.read_f32::<LE>()?, file.read_f32::<LE>()?])
+				)?;
+
+			file.seek(SeekFrom::Start(indices_offset))?;
+			let (indices, indices_future) =
+				Self::buffer_from_file(queue, BufferUsage::index_buffer(), index_count, &mut || file.read_u32::<LE>())?;
+
+			Ok((
+				Mesh {
+					position: position,
+					positions: positions,
+					normals: normals,
+					texcoords_main: texcoords_main,
+					indices: indices
+				},
+				position_future
+					.join(positions_future)
+					.join(normals_future)
+					.join(texcoords_main_future)
+					.join(indices_future)
+			))
+		});
+
+		test
+	}
+
+	fn buffer_from_file<T>(
+		queue: Arc<Queue>,
+		usage: BufferUsage,
+		count: usize,
+		read: &mut FnMut() -> io::Result<T>
+	) -> Result<(Arc<ImmutableBuffer<[T]>>, impl GpuFuture), MeshFromFileError>
+	where T: Send + Sync + 'static
+	{
+		let tmpbuf =
+			unsafe {
+				CpuAccessibleBuffer::uninitialized_array(queue.device().clone(), count, BufferUsage::transfer_source())?
+			};
+		{
+			let mut tmpbuf_lock = tmpbuf.write().unwrap();
+			for i in 0..count {
+				tmpbuf_lock[i] = read()?;
 			}
-		)
+		}
+		ImmutableBuffer::from_buffer(tmpbuf, usage, queue).map_err(|e| e.into())
 	}
 
 	pub(super) fn make_commands(
@@ -108,7 +149,7 @@ impl Mesh {
 	) -> Result<AutoCommandBuffer, OomError> {
 		Ok(
 			AutoCommandBufferBuilder::secondary_graphics_one_time_submit(shared.shaders.device.clone(), queue_family, shared.subpass_gbuffers.clone())?
-				.draw(
+				.draw_indexed(
 					shared.pipeline_gbuffers.clone(),
 					DynamicState {
 						line_width: None,
@@ -116,7 +157,8 @@ impl Mesh {
 							Some(vec![Viewport { origin: [0.0, 0.0], dimensions: dimensions, depth_range: 0.0..1.0 }]),
 						scissors: None,
 					},
-					vec![self.vertices.clone()],
+					vec![self.positions.clone(), self.normals.clone(), self.texcoords_main.clone()],
+					self.indices.clone(),
 					(camera_desc, mesh_desc_pool.next().add_buffer(self.position.clone()).unwrap().build().unwrap()),
 					()
 				)
@@ -127,59 +169,59 @@ impl Mesh {
 	}
 }
 
+pub struct MeshVertexDefinition {}
+impl MeshVertexDefinition {
+	pub fn new() -> Self {
+		Self {}
+	}
+}
+unsafe impl<I> VertexDefinition<I> for MeshVertexDefinition {
+	type BuffersIter = VecIntoIter<(u32, usize, InputRate)>;
+	type AttribsIter = VecIntoIter<(u32, u32, AttributeInfo)>;
+
+	fn definition(
+		&self,
+		_interface: &I
+	) -> Result<(Self::BuffersIter, Self::AttribsIter), IncompatibleVertexDefinitionError> {
+		// TODO: validate against shader
+		Ok((
+			vec![
+				(0, size_of::<[f32; 3]>(), InputRate::Vertex),
+				(1, size_of::<[f32; 3]>(), InputRate::Vertex),
+				(2, size_of::<[f32; 2]>(), InputRate::Vertex)
+			].into_iter(),
+			vec![
+				(0, 0, AttributeInfo { offset: 0, format: Format::R32G32B32Sfloat }),
+				(1, 1, AttributeInfo { offset: 0, format: Format::R32G32B32Sfloat }),
+				(2, 2, AttributeInfo { offset: 0, format: Format::R32G32Sfloat })
+			].into_iter()
+		))
+	}
+}
+unsafe impl VertexSource<Vec<Arc<BufferAccess + Send + Sync>>> for MeshVertexDefinition {
+	#[inline]
+	fn decode(
+		&self,
+		source: Vec<Arc<BufferAccess + Send + Sync>>
+	) -> (Vec<Box<BufferAccess + Send + Sync>>, usize, usize) {
+		assert_eq!(source.len(), 3);
+		let len = source[0].size() / size_of::<[f32; 3]>();
+		(source.into_iter().map(|x| Box::new(x) as _).collect(), len, 1)
+	}
+}
+
 #[derive(Debug)]
 pub enum MeshFromFileError {
-	Nom(nom::Err<String>),
+	Io(io::Error),
 	DeviceMemoryAllocError(DeviceMemoryAllocError),
 }
-impl From<nom::Err<String>> for MeshFromFileError{
-	fn from(err: nom::Err<String>) -> Self {
-		MeshFromFileError::Nom(err)
+impl From<io::Error> for MeshFromFileError{
+	fn from(err: io::Error) -> Self {
+		MeshFromFileError::Io(err)
 	}
 }
 impl From<DeviceMemoryAllocError> for MeshFromFileError{
 	fn from(err: DeviceMemoryAllocError) -> Self {
 		MeshFromFileError::DeviceMemoryAllocError(err)
 	}
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct MeshVertex {
-	pub position: [f32; 3],
-	pub normal: [f32; 3],
-}
-impl MeshVertex {
-	pub fn new(position: [f32; 3], normal: [f32; 3]) -> Self {
-		Self { position: position, normal: normal }
-	}
-}
-impl Hash for MeshVertex {
-	fn hash<H: Hasher>(&self, state: &mut H) {
-		hash_float_array(&self.position, state);
-		hash_float_array(&self.normal, state);
-	}
-}
-impl_vertex!(MeshVertex, position, normal);
-
-fn triangulate<'a>(mut vertices: impl ExactSizeIterator<Item = Vector4<f32>>) -> impl Iterator<Item = [usize; 3]> {
-	let v0 = vertices.next().unwrap();
-	let v1 = vertices.next().unwrap();
-	vertices
-		.enumerate()
-		.scan(
-			(v0, v1),
-			|(v0, vprev), (i, vcur)| {
-				let i = i + 2;
-				let angle = (*v0 - *vprev).angle(*vprev - vcur);
-				*vprev = vcur;
-
-				if angle.0 > 0.0 {
-					Some([0, i - 1, i])
-				} else if angle.0 < 0.0 {
-					Some([i, i - 1, 0])
-				} else {
-					panic!("Triangle must not be a line.");
-				}
-			}
-		)
 }

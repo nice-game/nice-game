@@ -15,9 +15,10 @@ where
 	CPU_POOL.lock().unwrap().dispatch(func)
 }
 
-pub fn spawn_fs<T>(func: impl FnOnce(&mut task::Context) -> Result<T, io::Error> + Send + 'static) -> CpuFuture<T, io::Error>
+pub fn spawn_fs<T, E>(func: impl FnOnce(&mut task::Context) -> Result<T, E> + Send + 'static) -> CpuFuture<T, E>
 where
-	T: Send + 'static
+	T: Send + 'static,
+	E: Send + 'static
 {
 	FS_POOL.lock().unwrap().dispatch(func)
 }
