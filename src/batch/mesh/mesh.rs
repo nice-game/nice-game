@@ -33,6 +33,7 @@ pub struct Mesh {
 	normals: Arc<ImmutableBuffer<[[f32; 3]]>>,
 	texcoords_main: Arc<ImmutableBuffer<[[f32; 2]]>>,
 	materials: Vec<Material>,
+	material_stride: usize,
 	material_buf: Arc<ImmutableBuffer<[u8]>>,
 }
 impl Mesh {
@@ -116,16 +117,17 @@ impl Mesh {
 			file.seek(SeekFrom::Start(materials_offset))?;
 
 			// round MaterialGpu size up to minimum alignment
-			let mut stride = queue.device().physical_device().limits().min_uniform_buffer_offset_alignment() as usize;
-			stride = (size_of::<MaterialGpu>() + stride - 1) / stride * stride;
-			debug!("material stride: {}", stride);
+			let mut material_stride =
+				queue.device().physical_device().limits().min_uniform_buffer_offset_alignment() as usize;
+			material_stride = (size_of::<MaterialGpu>() + material_stride - 1) / material_stride * material_stride;
+			debug!("material stride: {}", material_stride);
 
 			let mut materials = Vec::with_capacity(material_count);
 			let material_buf =
 				unsafe {
 					CpuAccessibleBuffer::uninitialized_array(
 						queue.device().clone(),
-						material_count * stride,
+						material_count * material_stride,
 						BufferUsage::transfer_source()
 					)?
 				};
@@ -149,7 +151,7 @@ impl Mesh {
 						},
 					});
 
-				material_buf.write().unwrap()[i * stride..i * stride + size_of::<MaterialGpu>()]
+				material_buf.write().unwrap()[i * material_stride..i * material_stride + size_of::<MaterialGpu>()]
 					.copy_from_slice(
 						&unsafe {
 							transmute::<_, [u8; size_of::<MaterialGpu>()]>(
@@ -184,6 +186,7 @@ impl Mesh {
 					normals: normals,
 					texcoords_main: texcoords_main,
 					materials: materials,
+					material_stride: material_stride,
 					material_buf: material_buf,
 				},
 				position_future
@@ -233,6 +236,7 @@ impl Mesh {
 			)?;
 
 		for (i, mat) in self.materials.iter().enumerate() {
+			let material_offset = self.material_stride * i;
 			cmd = cmd
 				.draw_indexed(
 					shared.pipeline_gbuffers.clone(),
@@ -250,13 +254,9 @@ impl Mesh {
 							.add_buffer(
 								self.material_buf.clone()
 									.into_buffer_slice()
-									.index(
-										queue_family.physical_device()
-											.limits()
-											.min_uniform_buffer_offset_alignment() as usize *
-											i
-									)
-									.unwrap())
+									.slice(material_offset..material_offset + size_of::<MaterialGpu>())
+									.unwrap()
+							)
 							.unwrap()
 							.build()
 							.unwrap(),
