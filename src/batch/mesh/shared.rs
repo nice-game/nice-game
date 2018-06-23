@@ -1,4 +1,4 @@
-use batch::mesh::{ NORMAL_FORMAT, DEPTH_FORMAT, MeshBatchShaders, MeshVertex, TargetVertex };
+use batch::mesh::{ NORMAL_FORMAT, DEPTH_FORMAT, TEXCOORD_FORMAT, MeshBatchShaders, TargetVertex, mesh::MeshVertexDefinition };
 use std::sync::Arc;
 use vulkano::{
 	format::Format,
@@ -22,12 +22,13 @@ impl MeshBatchShared {
 					attachments: {
 						color: { load: Clear, store: Store, format: format, samples: 1, },
 						normal: { load: Clear, store: Store, format: NORMAL_FORMAT, samples: 1, },
+						texcoord_main: { load: Clear, store: Store, format: TEXCOORD_FORMAT, samples: 1, },
 						depth: { load: Clear, store: Store, format: DEPTH_FORMAT, samples: 1, },
 						out: { load: Clear, store: Store, format: format, samples: 1, }
 					},
 					passes: [
-						{ color: [color, normal], depth_stencil: {depth}, input: [] },
-						{ color: [out], depth_stencil: {depth}, input: [color, normal] }
+						{ color: [color, normal, texcoord_main], depth_stencil: {depth}, input: [] },
+						{ color: [out], depth_stencil: {depth}, input: [color, normal, texcoord_main] }
 					]
 				)
 				.unwrap()
@@ -39,7 +40,7 @@ impl MeshBatchShared {
 		let pipeline_gbuffers =
 			Arc::new(
 				GraphicsPipeline::start()
-					.vertex_input_single_buffer::<MeshVertex>()
+					.vertex_input(MeshVertexDefinition::new())
 					.vertex_shader(shaders.shader_gbuffers_vertex.main_entry_point(), ())
 					.triangle_list()
 					.viewports_dynamic_scissors_irrelevant(1)

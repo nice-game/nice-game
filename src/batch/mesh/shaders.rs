@@ -71,7 +71,10 @@ mod vs_gbuffers {
 	#[src = "#version 450
 layout(location = 0) in vec3 position;
 layout(location = 1) in vec3 normal;
+layout(location = 2) in vec2 texcoord_main;
+
 layout(location = 0) out vec3 out_normal;
+layout(location = 1) out vec2 out_texcoord_main;
 
 layout(set = 0, binding = 0) uniform CameraPos { vec3 camera_pos; };
 layout(set = 0, binding = 1) uniform CameraRot { vec4 camera_rot; };
@@ -93,6 +96,7 @@ vec4 perspective(vec3 pos, vec4 proj) {
 
 void main() {
 	out_normal = quat_mul(quat_inv(camera_rot), normal);
+	out_texcoord_main = texcoord_main;
 	gl_Position = perspective(quat_mul(quat_inv(camera_rot), position + mesh_pos - camera_pos), camera_proj);
 }"]
 	struct Dummy;
@@ -104,12 +108,16 @@ mod fs_gbuffers {
 	#[ty = "fragment"]
 	#[src = "#version 450
 layout(location = 0) in vec3 normal;
+layout(location = 1) in vec2 texcoord_main;
+
 layout(location = 0) out vec4 out_color;
 layout(location = 1) out vec4 out_normal;
+layout(location = 2) out vec4 out_texcoord_main;
 
 void main() {
 	out_color = vec4(1);
 	out_normal = vec4(normal, 1);
+	out_texcoord_main = vec4(texcoord_main, 0, 1);
 }"]
 	struct Dummy;
 }
@@ -137,9 +145,10 @@ layout(location = 0) out vec4 out_color;
 
 layout(input_attachment_index = 0, set = 0, binding = 0) uniform subpassInput color;
 layout(input_attachment_index = 1, set = 0, binding = 1) uniform subpassInput normal;
+layout(input_attachment_index = 2, set = 0, binding = 2) uniform subpassInput texcoord_main;
 
 void main() {
-	out_color = subpassLoad(color);
+	out_color = subpassLoad(normal);
 }
 "]
 	struct Dummy;

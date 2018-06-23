@@ -3,7 +3,7 @@ extern crate futures;
 extern crate nice_game;
 extern crate simplelog;
 
-use cgmath::{ One, Quaternion, Vector3, Zero };
+use cgmath::{ One, Quaternion, vec3 };
 use futures::executor::block_on;
 use nice_game::{
 	Context,
@@ -35,7 +35,8 @@ fn main() {
 			"nIce Game"
 		);
 
-	let (mesh, mesh_future) = block_on(Mesh::from_file(&window, [0.0, 0.0, 3.0], "examples/assets/sphere.obj")).unwrap();
+	let (mesh, mesh_future) =
+		block_on(Mesh::from_file(&window, [0.0, 0.0, 3.0], "examples/assets/de_rebelzone.nmd")).unwrap();
 
 	let (mesh_batch_shaders, mesh_batch_shaders_future) = MeshBatchShaders::new(&mut window).unwrap();
 	let mesh_batch_shared = MeshBatchShared::new(mesh_batch_shaders, window.format());
@@ -75,7 +76,7 @@ fn make_camera(window: &Window) -> Camera {
 	let [width, height] = window.images()[0].dimensions().width_height();
 	Camera::new(
 		&window,
-		Vector3::zero(),
+		vec3(10.0, 10.0, -20.0),
 		Quaternion::one(),
 		width as f32 / height as f32,
 		140.0,
