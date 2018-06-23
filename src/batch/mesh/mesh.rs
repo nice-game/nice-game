@@ -107,12 +107,33 @@ impl Mesh {
 
 			file.seek(SeekFrom::Start(indices_offset))?;
 			let (indices, indices_future) =
-				Self::buffer_from_file(queue.clone(), BufferUsage::index_buffer(), index_count, &mut || file.read_u32::<LE>())?;
+				Self::buffer_from_file(
+					queue.clone(),
+					BufferUsage::index_buffer(),
+					index_count,
+					&mut || file.read_u32::<LE>()
+				)?;
 
 			file.seek(SeekFrom::Start(materials_offset))?;
 			let mut materials = Vec::with_capacity(material_count);
 			let mut material_buf = Vec::with_capacity(material_count);
 			for _ in 0..material_count {
+				materials
+					.push(Material {
+						index_count: file.read_u32::<LE>()?,
+						texture1: {
+							// skip texture for now
+							let strlen = file.read_u16::<LE>()? as i64;
+							file.seek(SeekFrom::Current(strlen))?;
+							None
+						},
+						texture2: {
+							// skip texture for now
+							let strlen = file.read_u16::<LE>()? as i64;
+							file.seek(SeekFrom::Current(strlen))?;
+							None
+						},
+					});
 				material_buf
 					.push(MaterialGpu {
 						light_penetration: file.read_u8()?,
@@ -124,25 +145,10 @@ impl Mesh {
 							buf
 						},
 					});
-
-				materials
-					.push(Material {
-						index_count: file.read_u32::<LE>()?,
-						texture1: {
-							// skip texture for now
-							file.seek(SeekFrom::Current(4))?;
-							None
-						},
-						texture2: {
-							// skip texture for now
-							file.seek(SeekFrom::Current(4))?;
-							None
-						},
-					});
 			}
 
 			let (material_buf, material_buf_future) =
-				ImmutableBuffer::from_iter(material_buf.into_iter(), BufferUsage::uniform_buffer(), queue.clone(),)?;
+				ImmutableBuffer::from_iter(material_buf.into_iter(), BufferUsage::uniform_buffer(), queue.clone())?;
 
 			Ok((
 				Mesh {
@@ -188,13 +194,21 @@ impl Mesh {
 	pub(super) fn make_commands(
 		&mut self,
 		shared: &MeshBatchShared,
-		camera_desc: impl DescriptorSet + Send + Sync + 'static,
+		camera_desc: impl DescriptorSet + Clone + Send + Sync + 'static,
 		mesh_desc_pool: &mut FixedSizeDescriptorSetsPool<Arc<GraphicsPipelineAbstract + Send + Sync + 'static>>,
 		queue_family: QueueFamily,
 		dimensions: [f32; 2],
 	) -> Result<AutoCommandBuffer, OomError> {
-		Ok(
-			AutoCommandBufferBuilder::secondary_graphics_one_time_submit(shared.shaders.device.clone(), queue_family, shared.subpass_gbuffers.clone())?
+		let mut cmd = AutoCommandBufferBuilder
+			::secondary_graphics_one_time_submit(
+				shared.shaders.device.clone(),
+				queue_family,
+				shared.subpass_gbuffers.clone()
+			)?;
+
+		let mut istart = 0;
+		for mat in &self.materials {
+			cmd = cmd
 				.draw_indexed(
 					shared.pipeline_gbuffers.clone(),
 					DynamicState {
@@ -204,14 +218,19 @@ impl Mesh {
 						scissors: None,
 					},
 					vec![self.positions.clone(), self.normals.clone(), self.texcoords_main.clone()],
-					self.indices.clone(),
-					(camera_desc, mesh_desc_pool.next().add_buffer(self.position.clone()).unwrap().build().unwrap()),
+					self.indices.clone().into_buffer_slice().slice(istart..istart + mat.index_count as usize).unwrap(),
+					(
+						camera_desc.clone(),
+						mesh_desc_pool.next().add_buffer(self.position.clone()).unwrap().build().unwrap()
+					),
 					()
 				)
-				.unwrap()
-				.build()
-				.map_err(|err| match err { BuildError::OomError(err) => err, err => unreachable!("{}", err) })?
-		)
+				.unwrap();
+
+			istart += mat.index_count as usize;
+		}
+
+		Ok(cmd.build().map_err(|err| match err { BuildError::OomError(err) => err, err => unreachable!("{}", err) })?)
 	}
 }
 
