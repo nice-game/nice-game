@@ -2,3 +2,4 @@
 /rls
 **/*.rs.bk
 Cargo.lock
+/.vscode

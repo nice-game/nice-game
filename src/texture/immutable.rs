@@ -25,24 +25,21 @@ impl ImmutableTexture {
 				let mut bytes = vec![];
 				File::open(path)?.read_to_end(&mut bytes)?;
 
-				let future =
-					spawn_cpu(move |_| {
-						let img = image::load_from_memory_with_format(&bytes, format)?.to_rgba();
-						let (width, height) = img.dimensions();
-						let img = img.into_raw();
+				Ok(spawn_cpu(move |_| {
+					let img = image::load_from_memory_with_format(&bytes, format)?.to_rgba();
+					let (width, height) = img.dimensions();
+					let img = img.into_raw();
 
-						let (img, future) =
-							ImmutableImage::from_iter(
-								img.into_iter(),
-								Dimensions::Dim2d { width: width, height: height },
-								R8G8B8A8Srgb,
-								queue,
-							)?;
+					let (img, future) =
+						ImmutableImage::from_iter(
+							img.into_iter(),
+							Dimensions::Dim2d { width: width, height: height },
+							R8G8B8A8Srgb,
+							queue,
+						)?;
 
-						Ok(SpriteGpuData { image: img, future: future.then_signal_fence_and_flush()? })
-					});
-
-				Ok(future)
+					Ok(SpriteGpuData { image: img, future: future.then_signal_fence_and_flush()? })
+				}))
 			});
 
 		TextureFuture { state: SpriteState::LoadingDisk(future) }

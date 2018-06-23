@@ -5,7 +5,7 @@ use std::{
 	fs::File,
 	io::{ self, prelude::*, SeekFrom },
 	mem::size_of,
-	path::Path,
+	path::{ Path, PathBuf },
 	sync::Arc,
 	vec::IntoIter as VecIntoIter,
 };
@@ -33,6 +33,8 @@ pub struct Mesh {
 	normals: Arc<ImmutableBuffer<[[f32; 3]]>>,
 	texcoords_main: Arc<ImmutableBuffer<[[f32; 2]]>>,
 	indices: Arc<ImmutableBuffer<[u32]>>,
+	materials: Vec<Material>,
+	material_buf: Arc<ImmutableBuffer<[MaterialGpu]>>,
 }
 impl Mesh {
 	pub fn from_file<P>(
@@ -43,7 +45,7 @@ impl Mesh {
 	where P: AsRef<Path> + Send + 'static
 	{
 		let queue = window.queue().clone();
-		let test = spawn_fs(move |_| {
+		spawn_fs(move |_| {
 			let (position, position_future) =
 				ImmutableBuffer::from_data(position, BufferUsage::uniform_buffer(), queue.clone())?;
 
@@ -53,6 +55,7 @@ impl Mesh {
 			file.read_exact(&mut magic_number)?;
 			assert_eq!(&magic_number, b"nmdl");
 
+			// skip version for now
 			file.seek(SeekFrom::Current(4))?;
 
 			let vertex_count = file.read_u32::<LE>()? as usize;
@@ -62,6 +65,18 @@ impl Mesh {
 			let _texcoords_lightmap_offset = file.read_u32::<LE>()? as u64;
 			let index_count = file.read_u32::<LE>()? as usize;
 			let indices_offset = file.read_u32::<LE>()? as u64;
+			let material_count = file.read_u8()? as usize;
+			let materials_offset = file.read_u32::<LE>()? as u64;
+
+			debug!("vertex_count: {}", vertex_count);
+			debug!("positions_offset: {}", positions_offset);
+			debug!("normals_offset: {}", normals_offset);
+			debug!("texcoords_main_offset: {}", texcoords_main_offset);
+			debug!("_texcoords_lightmap_offset: {}", _texcoords_lightmap_offset);
+			debug!("index_count: {}", index_count);
+			debug!("indices_offset: {}", indices_offset);
+			debug!("material_count: {}", material_count);
+			debug!("materials_offset: {}", materials_offset);
 
 			file.seek(SeekFrom::Start(positions_offset))?;
 			let (positions, positions_future) =
@@ -92,7 +107,42 @@ impl Mesh {
 
 			file.seek(SeekFrom::Start(indices_offset))?;
 			let (indices, indices_future) =
-				Self::buffer_from_file(queue, BufferUsage::index_buffer(), index_count, &mut || file.read_u32::<LE>())?;
+				Self::buffer_from_file(queue.clone(), BufferUsage::index_buffer(), index_count, &mut || file.read_u32::<LE>())?;
+
+			file.seek(SeekFrom::Start(materials_offset))?;
+			let mut materials = Vec::with_capacity(material_count);
+			let mut material_buf = Vec::with_capacity(material_count);
+			for _ in 0..material_count {
+				material_buf
+					.push(MaterialGpu {
+						light_penetration: file.read_u8()?,
+						subsurface_scattering: file.read_u8()?,
+						emissive_brightness: file.read_u16::<LE>()?,
+						base_color: {
+							let mut buf = [0; 3];
+							file.read_exact(&mut buf)?;
+							buf
+						},
+					});
+
+				materials
+					.push(Material {
+						index_count: file.read_u32::<LE>()?,
+						texture1: {
+							// skip texture for now
+							file.seek(SeekFrom::Current(4))?;
+							None
+						},
+						texture2: {
+							// skip texture for now
+							file.seek(SeekFrom::Current(4))?;
+							None
+						},
+					});
+			}
+
+			let (material_buf, material_buf_future) =
+				ImmutableBuffer::from_iter(material_buf.into_iter(), BufferUsage::uniform_buffer(), queue.clone(),)?;
 
 			Ok((
 				Mesh {
@@ -100,17 +150,18 @@ impl Mesh {
 					positions: positions,
 					normals: normals,
 					texcoords_main: texcoords_main,
-					indices: indices
+					indices: indices,
+					materials: materials,
+					material_buf: material_buf,
 				},
 				position_future
 					.join(positions_future)
 					.join(normals_future)
 					.join(texcoords_main_future)
 					.join(indices_future)
+					.join(material_buf_future)
 			))
-		});
-
-		test
+		})
 	}
 
 	fn buffer_from_file<T>(
@@ -219,4 +270,17 @@ impl From<DeviceMemoryAllocError> for MeshFromFileError{
 	fn from(err: DeviceMemoryAllocError) -> Self {
 		MeshFromFileError::DeviceMemoryAllocError(err)
 	}
+}
+
+struct Material {
+	index_count: u32,
+	texture1: Option<PathBuf>,
+	texture2: Option<PathBuf>,
+}
+
+struct MaterialGpu {
+	light_penetration: u8,
+	subsurface_scattering: u8,
+	emissive_brightness: u16,
+	base_color: [u8; 3],
 }
