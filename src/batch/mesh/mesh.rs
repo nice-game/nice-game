@@ -11,7 +11,7 @@ use std::{
 };
 use vulkano::{
 	OomError,
-	buffer::{ BufferAccess, BufferUsage, CpuAccessibleBuffer, ImmutableBuffer },
+	buffer::{ BufferAccess, BufferSlice, BufferUsage, CpuAccessibleBuffer, ImmutableBuffer },
 	command_buffer::{ AutoCommandBuffer, AutoCommandBufferBuilder, BuildError, DynamicState },
 	descriptor::{ DescriptorSet, descriptor_set::{ FixedSizeDescriptorSetsPool } },
 	device::Queue,
@@ -117,10 +117,14 @@ impl Mesh {
 			file.seek(SeekFrom::Start(materials_offset))?;
 			let mut materials = Vec::with_capacity(material_count);
 			let mut material_buf = Vec::with_capacity(material_count);
+			let mut index_start = 0;
 			for _ in 0..material_count {
+				let index_count = file.read_u32::<LE>()? as usize;
+
 				materials
 					.push(Material {
-						index_count: file.read_u32::<LE>()?,
+						indices:
+							indices.clone().into_buffer_slice().slice(index_start..index_start + index_count).unwrap(),
 						texture1: {
 							// skip texture for now
 							let strlen = file.read_u16::<LE>()? as i64;
@@ -134,6 +138,7 @@ impl Mesh {
 							None
 						},
 					});
+
 				material_buf
 					.push(MaterialGpu {
 						light_penetration: file.read_u8()?,
@@ -145,6 +150,8 @@ impl Mesh {
 							buf
 						},
 					});
+
+				index_start += index_count;
 			}
 
 			let (material_buf, material_buf_future) =
@@ -206,7 +213,6 @@ impl Mesh {
 				shared.subpass_gbuffers.clone()
 			)?;
 
-		let mut istart = 0;
 		for mat in &self.materials {
 			cmd = cmd
 				.draw_indexed(
@@ -218,7 +224,7 @@ impl Mesh {
 						scissors: None,
 					},
 					vec![self.positions.clone(), self.normals.clone(), self.texcoords_main.clone()],
-					self.indices.clone().into_buffer_slice().slice(istart..istart + mat.index_count as usize).unwrap(),
+					mat.indices.clone(),
 					(
 						camera_desc.clone(),
 						mesh_desc_pool.next().add_buffer(self.position.clone()).unwrap().build().unwrap()
@@ -226,8 +232,6 @@ impl Mesh {
 					()
 				)
 				.unwrap();
-
-			istart += mat.index_count as usize;
 		}
 
 		Ok(cmd.build().map_err(|err| match err { BuildError::OomError(err) => err, err => unreachable!("{}", err) })?)
@@ -292,7 +296,7 @@ impl From<DeviceMemoryAllocError> for MeshFromFileError{
 }
 
 struct Material {
-	index_count: u32,
+	indices: BufferSlice<[u32], Arc<ImmutableBuffer<[u32]>>>,
 	texture1: Option<PathBuf>,
 	texture2: Option<PathBuf>,
 }
