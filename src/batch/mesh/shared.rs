@@ -1,4 +1,4 @@
-use batch::mesh::{ NORMAL_FORMAT, DEPTH_FORMAT, TEXCOORD_FORMAT, MeshBatchShaders, TargetVertex, mesh::MeshVertexDefinition };
+use batch::mesh::{ NORMAL_FORMAT, DEPTH_FORMAT, MeshBatchShaders, TargetVertex, mesh::MeshVertexDefinition };
 use std::sync::Arc;
 use vulkano::{
 	format::Format,
@@ -22,13 +22,12 @@ impl MeshBatchShared {
 					attachments: {
 						color: { load: Clear, store: Store, format: format, samples: 1, },
 						normal: { load: Clear, store: Store, format: NORMAL_FORMAT, samples: 1, },
-						texcoord_main: { load: Clear, store: Store, format: TEXCOORD_FORMAT, samples: 1, },
 						depth: { load: Clear, store: Store, format: DEPTH_FORMAT, samples: 1, },
 						out: { load: Clear, store: Store, format: format, samples: 1, }
 					},
 					passes: [
-						{ color: [color, normal, texcoord_main], depth_stencil: {depth}, input: [] },
-						{ color: [out], depth_stencil: {depth}, input: [color, normal, texcoord_main] }
+						{ color: [color, normal], depth_stencil: {depth}, input: [] },
+						{ color: [out], depth_stencil: {}, input: [color, normal, depth] }
 					]
 				)
 				.unwrap()

@@ -79,7 +79,7 @@ fn make_camera(window: &Window) -> Camera {
 		vec3(-5.0, -7.0, -15.0),
 		Quaternion::one(),
 		width as f32 / height as f32,
-		140.0,
+		100.0,
 		0.05,
 		1500.0
 	).unwrap()

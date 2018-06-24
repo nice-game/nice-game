@@ -122,12 +122,10 @@ layout(location = 2) in vec3 base_color;
 
 layout(location = 0) out vec4 out_color;
 layout(location = 1) out vec4 out_normal;
-layout(location = 2) out vec4 out_texcoord_main;
 
 void main() {
 	out_color = vec4(base_color, 1);
 	out_normal = vec4(normal, 1);
-	out_texcoord_main = vec4(texcoord_main, 0, 1);
 }"]
 	struct Dummy;
 }
@@ -155,10 +153,10 @@ layout(location = 0) out vec4 out_color;
 
 layout(input_attachment_index = 0, set = 0, binding = 0) uniform subpassInput color;
 layout(input_attachment_index = 1, set = 0, binding = 1) uniform subpassInput normal;
-layout(input_attachment_index = 2, set = 0, binding = 2) uniform subpassInput texcoord_main;
+layout(input_attachment_index = 2, set = 0, binding = 2) uniform subpassInput depth;
 
 void main() {
-	out_color = subpassLoad(color);
+	out_color = subpassLoad(depth);
 }
 "]
 	struct Dummy;
