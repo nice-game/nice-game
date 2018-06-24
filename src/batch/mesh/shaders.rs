@@ -98,7 +98,7 @@ vec3 quat_mul(vec4 quat, vec3 vec) {
 	return cross(quat.xyz, cross(quat.xyz, vec) + vec * quat.w) * 2.0 + vec;
 }
 
-vec4 perspective(vec3 pos, vec4 proj) {
+vec4 perspective(vec4 proj, vec3 pos) {
 	return vec4(pos.xy * proj.xy, pos.z * proj.z + proj.w, -pos.z);
 }
 
@@ -106,7 +106,7 @@ void main() {
 	out_normal = quat_mul(quat_inv(camera_rot), normal);
 	out_texcoord_main = texcoord_main;
 	out_base_color = base_color;
-	gl_Position = perspective(quat_mul(quat_inv(camera_rot), position + mesh_pos - camera_pos), camera_proj);
+	gl_Position = perspective(camera_proj, quat_mul(quat_inv(camera_rot), position + mesh_pos - camera_pos));
 }"]
 	struct Dummy;
 }
