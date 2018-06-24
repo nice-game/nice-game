@@ -13,7 +13,7 @@ use vulkano::{
 	OomError,
 	buffer::{ BufferAccess, BufferSlice, BufferUsage, CpuAccessibleBuffer, ImmutableBuffer },
 	command_buffer::{ AutoCommandBuffer, AutoCommandBufferBuilder, BuildError, DynamicState },
-	descriptor::{ DescriptorSet, descriptor_set::{ FixedSizeDescriptorSetsPool } },
+	descriptor::{ DescriptorSet, descriptor_set::{ FixedSizeDescriptorSetsPool, PersistentDescriptorSet } },
 	device::Queue,
 	format::Format,
 	instance::QueueFamily,
@@ -34,17 +34,19 @@ pub struct Mesh {
 	texcoords_main: Arc<ImmutableBuffer<[[f32; 2]]>>,
 	materials: Vec<Material>,
 	material_stride: usize,
-	material_buf: Arc<ImmutableBuffer<[u8]>>,
+	material_descs: Vec<Arc<DescriptorSet + Send + Sync + 'static>>,
 }
 impl Mesh {
 	pub fn from_file<P>(
 		window: &Window,
+		shared: &MeshBatchShared,
 		position: [f32; 3],
 		path: P
 	) -> CpuFuture<(Mesh, impl GpuFuture + Send + Sync + 'static), MeshFromFileError>
 	where P: AsRef<Path> + Send + 'static
 	{
 		let queue = window.queue().clone();
+		let pipeline_gbuffers = shared.pipeline_gbuffers.clone();
 		spawn_fs(move |_| {
 			let (position, position_future) =
 				ImmutableBuffer::from_data(position, BufferUsage::uniform_buffer(), queue.clone())?;
@@ -131,53 +133,73 @@ impl Mesh {
 						BufferUsage::transfer_source()
 					)?
 				};
-			let mut index_start = 0;
-			for i in 0..material_count {
-				let index_count = file.read_u32::<LE>()? as usize;
+			{
+				let mut material_buf_lock = material_buf.write().unwrap();
+				let mut index_start = 0;
+				for i in 0..material_count {
+					let index_count = file.read_u32::<LE>()? as usize;
 
-				materials
-					.push(Material {
-						indices:
-							indices.clone().into_buffer_slice().slice(index_start..index_start + index_count).unwrap(),
-						texture1: {
-							// skip texture for now
-							file.seek(SeekFrom::Current(6))?;
-							None
-						},
-						texture2: {
-							// skip texture for now
-							file.seek(SeekFrom::Current(6))?;
-							None
-						},
-					});
+					materials
+						.push(Material {
+							indices:
+								indices.clone().into_buffer_slice().slice(index_start..index_start + index_count).unwrap(),
+							texture1: {
+								// skip texture for now
+								file.seek(SeekFrom::Current(6))?;
+								None
+							},
+							texture2: {
+								// skip texture for now
+								file.seek(SeekFrom::Current(6))?;
+								None
+							},
+						});
 
-				material_buf.write().unwrap()[i * material_stride..i * material_stride + size_of::<MaterialGpu>()]
-					.copy_from_slice(
-						&unsafe {
-							transmute::<_, [u8; size_of::<MaterialGpu>()]>(
-								MaterialGpu {
-									light_penetration: file.read_u8()? as u32,
-									subsurface_scattering: file.read_u8()? as u32,
-									emissive_brightness: file.read_u16::<LE>()? as u32,
-									base_color: {
-										let mut buf = [0; 3];
-										file.read_exact(&mut buf)?;
-										[
-											(buf[0] as f32 / 255.0).powf(2.2),
-											(buf[1] as f32 / 255.0).powf(2.2),
-											(buf[2] as f32 / 255.0).powf(2.2)
-										]
-									},
-								}
-							)
-						}
-					);
+					material_buf_lock[i * material_stride..i * material_stride + size_of::<MaterialGpu>()]
+						.copy_from_slice(
+							&unsafe {
+								transmute::<_, [u8; size_of::<MaterialGpu>()]>(
+									MaterialGpu {
+										light_penetration: file.read_u8()? as u32,
+										subsurface_scattering: file.read_u8()? as u32,
+										emissive_brightness: file.read_u16::<LE>()? as u32,
+										base_color: {
+											let mut buf = [0; 3];
+											file.read_exact(&mut buf)?;
+											[
+												(buf[0] as f32 / 255.0).powf(2.2),
+												(buf[1] as f32 / 255.0).powf(2.2),
+												(buf[2] as f32 / 255.0).powf(2.2)
+											]
+										},
+									}
+								)
+							}
+						);
 
-				index_start += index_count;
+					index_start += index_count;
+				}
 			}
 
 			let (material_buf, material_buf_future) =
 				ImmutableBuffer::from_buffer(material_buf, BufferUsage::uniform_buffer(), queue)?;
+			let material_descs = (0..material_count)
+				.map(|i| {
+					let material_offset = material_stride * i;
+					Arc::new(
+						PersistentDescriptorSet::start(pipeline_gbuffers.clone(), 2)
+							.add_buffer(
+								material_buf.clone()
+									.into_buffer_slice()
+									.slice(material_offset..material_offset + size_of::<MaterialGpu>())
+									.unwrap()
+							)
+							.unwrap()
+							.build()
+							.unwrap()
+					 ) as _
+				})
+				.collect();
 
 			Ok((
 				Mesh {
@@ -187,7 +209,7 @@ impl Mesh {
 					texcoords_main: texcoords_main,
 					materials: materials,
 					material_stride: material_stride,
-					material_buf: material_buf,
+					material_descs: material_descs,
 				},
 				position_future
 					.join(positions_future)
@@ -236,7 +258,7 @@ impl Mesh {
 			)?;
 
 		for (i, mat) in self.materials.iter().enumerate() {
-			let material_offset = self.material_stride * i;
+			let mesh_desc = Arc::new(mesh_desc_pool.next().add_buffer(self.position.clone()).unwrap().build().unwrap());
 			cmd = cmd
 				.draw_indexed(
 					shared.pipeline_gbuffers.clone(),
@@ -248,20 +270,7 @@ impl Mesh {
 					},
 					vec![self.positions.clone(), self.normals.clone(), self.texcoords_main.clone()],
 					mat.indices.clone(),
-					(
-						camera_desc.clone(),
-						mesh_desc_pool.next()
-							.add_buffer(
-								self.material_buf.clone()
-									.into_buffer_slice()
-									.slice(material_offset..material_offset + size_of::<MaterialGpu>())
-									.unwrap()
-							)
-							.unwrap()
-							.build()
-							.unwrap(),
-						mesh_desc_pool.next().add_buffer(self.position.clone()).unwrap().build().unwrap()
-					),
+					(camera_desc.clone(), mesh_desc.clone(), self.material_descs[i].clone()),
 					()
 				)
 				.unwrap();

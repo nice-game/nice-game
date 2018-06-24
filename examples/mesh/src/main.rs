@@ -35,11 +35,11 @@ fn main() {
 			"nIce Game"
 		);
 
-	let (mesh, mesh_future) =
-		block_on(Mesh::from_file(&window, [0.0, 0.0, 3.0], "examples/assets/de_rebelzone.nmd")).unwrap();
-
 	let (mesh_batch_shaders, mesh_batch_shaders_future) = MeshBatchShaders::new(&mut window).unwrap();
 	let mesh_batch_shared = MeshBatchShared::new(mesh_batch_shaders, window.format());
+
+	let (mesh, mesh_future) =
+		block_on(Mesh::from_file(&window, &mesh_batch_shared, [0.0, 0.0, 3.0], "examples/assets/de_rebelzone.nmd")).unwrap();
 
 	let mut mesh_batch = MeshBatch::new(&window, mesh_batch_shared).unwrap();
 	mesh_batch.add_mesh(mesh);
