@@ -89,7 +89,7 @@ impl Window {
 				device.clone(),
 				surface.clone(),
 				caps.min_image_count,
-				caps.supported_formats[0].0,
+				Format::B8G8R8A8Srgb,
 				caps.current_extent.unwrap_or(surface.window().get_inner_size().map(|(x, y)| [x, y]).unwrap()),
 				1,
 				caps.supported_usage_flags,
