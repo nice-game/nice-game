@@ -81,14 +81,14 @@ layout(set = 0, binding = 0) uniform CameraPos { vec3 camera_pos; };
 layout(set = 0, binding = 1) uniform CameraRot { vec4 camera_rot; };
 layout(set = 0, binding = 2) uniform CameraProj { vec4 camera_proj; };
 
-layout(set = 1, binding = 0) uniform Material {
+layout(set = 1, binding = 0) uniform MeshDynamic { vec3 mesh_pos; };
+
+layout(set = 2, binding = 0) uniform Material {
 	uint light_penetration;
 	uint subsurface_scattering;
 	uint emissive_brightness;
 	vec3 base_color;
 };
-
-layout(set = 2, binding = 0) uniform MeshDynamic { vec3 mesh_pos; };
 
 vec4 quat_inv(vec4 quat) {
 	return vec4(-quat.xyz, quat.w) / dot(quat, quat);
