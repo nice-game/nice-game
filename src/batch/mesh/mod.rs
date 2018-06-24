@@ -122,16 +122,15 @@ impl MeshBatch {
 		let dimensions = [framebuffer.width() as f32, framebuffer.height() as f32];
 
 		let mut command_buffer =
-			AutoCommandBufferBuilder::primary_one_time_submit(self.shared.shaders.target_vertices.device().clone(), window.queue().family())?
+			AutoCommandBufferBuilder
+				::primary_one_time_submit(
+					self.shared.shaders.target_vertices.device().clone(),
+					window.queue().family()
+				)?
 				.begin_render_pass(
 					framebuffer.clone(),
 					true,
-					vec![
-						[0.0, 0.0, 0.0, 1.0].into(),
-						[0.0; 4].into(),
-						1.0.into(),
-						[0.0, 0.0, 0.0, 1.0].into()
-					]
+					vec![[0.0, 0.0, 0.0, 1.0].into(), [0.0; 4].into(), 1.0.into(), [0.0, 0.0, 0.0, 1.0].into()]
 				)
 				.unwrap();
 
