@@ -124,8 +124,14 @@ layout(location = 0) out vec4 out_color;
 layout(location = 1) out vec4 out_normal;
 layout(location = 2) out vec4 out_texcoord_main;
 
+float softSq(float x, float y) {
+	return tanh(sin(x * 6.283185307179586 * 4.0) * y);
+}
+
 void main() {
-	out_color = vec4(base_color, 1);
+	float sharp = 1.0;
+	float wave = (softSq(texcoord_main.x, sharp) * softSq(texcoord_main.y, sharp)) * 0.5 + 0.5;
+	out_color = vec4(mix(base_color, base_color.bgr, wave), 1);
 	out_normal = vec4(normal, 1);
 	out_texcoord_main = vec4(texcoord_main, 0, 1);
 }"]
@@ -158,7 +164,13 @@ layout(input_attachment_index = 1, set = 0, binding = 1) uniform subpassInput no
 layout(input_attachment_index = 2, set = 0, binding = 2) uniform subpassInput texcoord_main;
 
 void main() {
-	out_color = subpassLoad(color);
+	vec3 g_color = subpassLoad(color).rgb;
+	vec3 g_normal = subpassLoad(normal).xyz;
+
+	vec3 sunDir = normalize(vec3(-1, -4, 2));
+	float light = max(0.05, dot(g_normal, sunDir));
+
+	out_color = vec4(g_color * light, 1);
 }
 "]
 	struct Dummy;
