@@ -3,14 +3,14 @@ use std::sync::Arc;
 use vulkano::{
 	OomError,
 	buffer::{ BufferUsage, ImmutableBuffer },
-	device::Device,
+	device::Queue,
 	memory::DeviceMemoryAllocError,
 	sync::GpuFuture,
 };
 use window::Window;
 
 pub struct MeshBatchShaders {
-	pub(super) device: Arc<Device>,
+	pub(super) queue: Arc<Queue>,
 	pub(super) target_vertices: Arc<ImmutableBuffer<[TargetVertex; 6]>>,
 	pub(super) shader_gbuffers_vertex: vs_gbuffers::Shader,
 	pub(super) shader_gbuffers_fragment: fs_gbuffers::Shader,
@@ -35,7 +35,7 @@ impl MeshBatchShaders {
 
 		Ok((
 			Arc::new(Self {
-				device: window.device().clone(),
+				queue: window.queue().clone(),
 				target_vertices: target_vertices,
 				shader_gbuffers_vertex: vs_gbuffers::Shader::load(window.device().clone())?,
 				shader_gbuffers_fragment: fs_gbuffers::Shader::load(window.device().clone())?,
@@ -151,9 +151,10 @@ mod fs_target {
 	#[src = "#version 450
 layout(location = 0) out vec4 out_color;
 
-layout(input_attachment_index = 0, set = 0, binding = 0) uniform subpassInput color;
-layout(input_attachment_index = 1, set = 0, binding = 1) uniform subpassInput normal;
-layout(input_attachment_index = 2, set = 0, binding = 2) uniform subpassInput depth;
+layout(set = 0, binding = 0) uniform Resolution { vec4 resolution; };
+layout(input_attachment_index = 0, set = 0, binding = 1) uniform subpassInput color;
+layout(input_attachment_index = 1, set = 0, binding = 2) uniform subpassInput normal;
+layout(input_attachment_index = 2, set = 0, binding = 3) uniform subpassInput depth;
 
 void main() {
 	//subpassLoad(depth);
