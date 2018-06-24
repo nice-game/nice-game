@@ -76,7 +76,7 @@ fn make_camera(window: &Window) -> Camera {
 	let [width, height] = window.images()[0].dimensions().width_height();
 	Camera::new(
 		&window,
-		vec3(-5.0, -7.0, -19.0),
+		vec3(14.5, -10.5, -34.5),
 		Quaternion::one(),
 		width as f32 / height as f32,
 		100.0,
