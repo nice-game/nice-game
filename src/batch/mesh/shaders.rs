@@ -156,7 +156,14 @@ layout(input_attachment_index = 1, set = 0, binding = 1) uniform subpassInput no
 layout(input_attachment_index = 2, set = 0, binding = 2) uniform subpassInput depth;
 
 void main() {
-	out_color = subpassLoad(depth);
+	//subpassLoad(depth);
+	vec3 g_color = subpassLoad(color).rgb;
+	vec3 g_normal = subpassLoad(normal).xyz;
+
+	vec3 sunDir = normalize(vec3(-1, -4, 2));
+	float light = max(0.05, dot(g_normal, sunDir));
+
+	out_color = vec4(g_color * light, 1);
 }
 "]
 	struct Dummy;
