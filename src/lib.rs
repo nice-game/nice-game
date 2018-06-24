@@ -79,6 +79,7 @@ impl ObjectIdRoot {
 	}
 }
 
+#[derive(Clone)]
 struct ImageFramebuffer {
 	image: Weak<ImageViewAccess + Send + Sync + 'static>,
 	framebuffer: Arc<FramebufferAbstract + Send + Sync + 'static>,
