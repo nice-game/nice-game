@@ -122,7 +122,6 @@ layout(location = 2) in vec3 base_color;
 
 layout(location = 0) out vec4 out_color;
 layout(location = 1) out vec4 out_normal;
-layout(location = 2) out vec4 out_texcoord_main;
 
 float softSq(float x, float y) {
 	return tanh(sin(x * 6.283185307179586 * 4.0) * y);
@@ -133,7 +132,6 @@ void main() {
 	float wave = (softSq(texcoord_main.x, sharp) * softSq(texcoord_main.y, sharp)) * 0.5 + 0.5;
 	out_color = vec4(mix(base_color, base_color.bgr, wave), 1);
 	out_normal = vec4(normal, 1);
-	out_texcoord_main = vec4(texcoord_main, 0, 1);
 }"]
 	struct Dummy;
 }
@@ -161,9 +159,12 @@ layout(location = 0) out vec4 out_color;
 
 layout(input_attachment_index = 0, set = 0, binding = 0) uniform subpassInput color;
 layout(input_attachment_index = 1, set = 0, binding = 1) uniform subpassInput normal;
-layout(input_attachment_index = 2, set = 0, binding = 2) uniform subpassInput texcoord_main;
+layout(input_attachment_index = 2, set = 0, binding = 2) uniform subpassInput depth;
+
+layout(set = 0, binding = 0) uniform Resolution { vec4 resolution; };
 
 void main() {
+	vec3 g_position_ds = vec3(gl_FragCoord.xy * resolution.zw, 2.0 * subpassLoad(depth)) - 1.0;
 	vec3 g_color = subpassLoad(color).rgb;
 	vec3 g_normal = subpassLoad(normal).xyz;
 
