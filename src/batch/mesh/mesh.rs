@@ -252,7 +252,7 @@ impl Mesh {
 	) -> Result<AutoCommandBuffer, OomError> {
 		let mut cmd = AutoCommandBufferBuilder
 			::secondary_graphics_one_time_submit(
-				shared.shaders.device.clone(),
+				shared.shaders.target_vertices.device().clone(),
 				queue_family,
 				shared.subpass_gbuffers.clone()
 			)?;
