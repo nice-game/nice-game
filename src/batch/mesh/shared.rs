@@ -46,6 +46,7 @@ impl MeshBatchShared {
 					.viewports_dynamic_scissors_irrelevant(1)
 					.fragment_shader(shaders.shader_gbuffers_fragment.main_entry_point(), ())
 					.render_pass(subpass_gbuffers.clone())
+					.depth_stencil_simple_depth()
 					.build(shaders.device.clone())
 					.expect("failed to create pipeline")
 			);
