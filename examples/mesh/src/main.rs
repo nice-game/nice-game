@@ -41,12 +41,12 @@ fn main() {
 	let (mesh, mesh_future) =
 		block_on(Mesh::from_file(&window, &mesh_batch_shared, [0.0, 0.0, 3.0], "examples/assets/de_rebelzone.nmd")).unwrap();
 
-	let mut mesh_batch = MeshBatch::new(&window, mesh_batch_shared).unwrap();
+	let (mut mesh_batch, mesh_batch_future) = MeshBatch::new(&window, mesh_batch_shared).unwrap();
 	mesh_batch.add_mesh(mesh);
 
 	let mut camera = make_camera(&window);
 
-	window.join_future(mesh_future.join(mesh_batch_shaders_future));
+	window.join_future(mesh_future.join(mesh_batch_shaders_future).join(mesh_batch_future));
 
 	loop {
 		let mut done = false;
@@ -61,12 +61,12 @@ fn main() {
 		}
 
 		window
-			.present(|window, image_num, future| {
-				future
-					.then_execute(
-						window.queue().clone(), mesh_batch.commands(window, window, image_num, &camera).unwrap()
-					)
-					.unwrap()
+			.present(|window, image_num, mut future| {
+				let (cmds, cmds_future) = mesh_batch.commands(window, window, image_num, &camera).unwrap();
+				if let Some(cmds_future) = cmds_future {
+					future = Box::new(future.join(cmds_future));
+				}
+				future.then_execute(window.queue().clone(), cmds).unwrap()
 			})
 			.unwrap();
 	}

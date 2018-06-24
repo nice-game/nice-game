@@ -18,7 +18,7 @@ impl MeshBatchShared {
 		let render_pass: Arc<RenderPassAbstract + Send + Sync> =
 			Arc::new(
 				ordered_passes_renderpass!(
-					shaders.device.clone(),
+					shaders.target_vertices.device().clone(),
 					attachments: {
 						color: { load: Clear, store: Store, format: format, samples: 1, },
 						normal: { load: Clear, store: Store, format: NORMAL_FORMAT, samples: 1, },
@@ -46,7 +46,7 @@ impl MeshBatchShared {
 					.fragment_shader(shaders.shader_gbuffers_fragment.main_entry_point(), ())
 					.render_pass(subpass_gbuffers.clone())
 					.depth_stencil_simple_depth()
-					.build(shaders.device.clone())
+					.build(shaders.target_vertices.device().clone())
 					.expect("failed to create pipeline")
 			);
 
@@ -59,7 +59,7 @@ impl MeshBatchShared {
 					.viewports_dynamic_scissors_irrelevant(1)
 					.fragment_shader(shaders.shader_target_fragment.main_entry_point(), ())
 					.render_pass(subpass_target.clone())
-					.build(shaders.device.clone())
+					.build(shaders.target_vertices.device().clone())
 					.expect("failed to create pipeline")
 			);
 

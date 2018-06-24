@@ -7,8 +7,10 @@ pub use self::shaders::{ MeshBatchShaders, MeshBatchShadersError };
 pub use self::shared::MeshBatchShared;
 use { ImageFramebuffer, ObjectId, RenderTarget, window::Window };
 use camera::Camera;
+use cgmath::vec4;
 use std::sync::Arc;
 use vulkano::{
+	buffer::{ BufferUsage, ImmutableBuffer },
 	command_buffer::{ AutoCommandBuffer, AutoCommandBufferBuilder, BuildError, DynamicState },
 	descriptor::{ DescriptorSet, descriptor_set::{ FixedSizeDescriptorSetsPool, PersistentDescriptorSet } },
 	device::Device,
@@ -17,6 +19,7 @@ use vulkano::{
 	image::{ AttachmentImage, ImageCreationError, ImageViewAccess },
 	memory::{ DeviceMemoryAllocError },
 	pipeline::{ GraphicsPipelineAbstract, viewport::Viewport },
+	sync::GpuFuture,
 };
 
 const NORMAL_FORMAT: Format = Format::R32G32B32A32Sfloat;
@@ -35,14 +38,26 @@ impl MeshBatch {
 	pub fn new(
 		target: &RenderTarget,
 		shared: Arc<MeshBatchShared>
-	) -> Result<Self, DeviceMemoryAllocError> {
+	) -> Result<(Self, impl GpuFuture), DeviceMemoryAllocError> {
 		let dimensions = target.images()[0].dimensions().width_height();
 		let image_color =
-			Self::make_transient_input_attachment(shared.shaders.device.clone(), dimensions, target.format())?;
+			Self::make_transient_input_attachment(
+				shared.shaders.target_vertices.device().clone(),
+				dimensions,
+				target.format()
+			)?;
 		let image_normal =
-			Self::make_transient_input_attachment(shared.shaders.device.clone(), dimensions, NORMAL_FORMAT)?;
+			Self::make_transient_input_attachment(
+				shared.shaders.target_vertices.device().clone(),
+				dimensions,
+				NORMAL_FORMAT
+			)?;
 		let image_depth =
-			Self::make_transient_input_attachment(shared.shaders.device.clone(), dimensions, DEPTH_FORMAT)?;
+			Self::make_transient_input_attachment(
+				shared.shaders.target_vertices.device().clone(),
+				dimensions,
+				DEPTH_FORMAT
+			)?;
 
 		let framebuffers =
 			target.images().iter()
@@ -61,9 +76,24 @@ impl MeshBatch {
 				})
 				.collect::<Result<Vec<_>, _>>()?;
 
+		let dimensions = [dimensions[0] as f32, dimensions[1] as f32];
+		let (target_size, target_size_future) =
+			ImmutableBuffer::from_data(
+				vec4(
+					dimensions[0],
+					dimensions[1],
+					2.0 / dimensions[0],
+					2.0 / dimensions[1]
+				),
+				BufferUsage::uniform_buffer(),
+				shared.shaders.queue.clone()
+			)?;
+
 		let desc_target =
 			Arc::new(
 				PersistentDescriptorSet::start(shared.pipeline_target.clone(), 0)
+					.add_buffer(target_size)
+					.unwrap()
 					.add_image(image_color)
 					.unwrap()
 					.add_image(image_normal)
@@ -77,15 +107,18 @@ impl MeshBatch {
 		let camera_desc_pool = FixedSizeDescriptorSetsPool::new(shared.pipeline_gbuffers.clone(), 0);
 		let mesh_desc_pool = FixedSizeDescriptorSetsPool::new(shared.pipeline_gbuffers.clone(), 1);
 
-		Ok(Self {
-			shared: shared,
-			meshes: vec![],
-			framebuffers: framebuffers,
-			target_id: target.id_root().make_id(),
-			desc_target: desc_target,
-			camera_desc_pool: camera_desc_pool,
-			mesh_desc_pool: mesh_desc_pool,
-		})
+		Ok((
+			Self {
+				shared: shared,
+				meshes: vec![],
+				framebuffers: framebuffers,
+				target_id: target.id_root().make_id(),
+				desc_target: desc_target,
+				camera_desc_pool: camera_desc_pool,
+				mesh_desc_pool: mesh_desc_pool,
+			},
+			target_size_future
+		))
 	}
 
 	pub fn add_mesh(&mut self, mesh: Mesh) {
@@ -98,7 +131,7 @@ impl MeshBatch {
 		target: &RenderTarget,
 		image_num: usize,
 		camera: &Camera,
-	) -> Result<AutoCommandBuffer, DeviceMemoryAllocError> {
+	) -> Result<(AutoCommandBuffer, Option<impl GpuFuture>), DeviceMemoryAllocError> {
 		assert!(self.target_id.is_child_of(target.id_root()));
 
 		let dimensions = target.images()[image_num].dimensions().width_height();
@@ -109,9 +142,9 @@ impl MeshBatch {
 			.filter(|old_image| Arc::ptr_eq(&target.images()[image_num], &old_image))
 			.next()
 			.map(|_| self.framebuffers[image_num].framebuffer.clone());
-		let framebuffer =
+		let (framebuffer, target_size_future) =
 			if let Some(framebuffer) = framebuffer.as_ref() {
-				framebuffer.clone()
+				(framebuffer.clone(), None)
 			} else {
 				let image_color =
 					Self::make_transient_input_attachment(window.device().clone(), dimensions, target.format())?;
@@ -119,9 +152,25 @@ impl MeshBatch {
 					Self::make_transient_input_attachment(window.device().clone(), dimensions, NORMAL_FORMAT)?;
 				let image_depth =
 					Self::make_transient_input_attachment(window.device().clone(), dimensions, DEPTH_FORMAT)?;
+
+				let dimensions = [dimensions[0] as f32, dimensions[1] as f32];
+				let (target_size, target_size_future) =
+					ImmutableBuffer::from_data(
+						vec4(
+							dimensions[0],
+							dimensions[1],
+							2.0 / dimensions[0],
+							2.0 / dimensions[1]
+						),
+						BufferUsage::uniform_buffer(),
+						self.shared.shaders.queue.clone()
+					)?;
+
 				self.desc_target =
 					Arc::new(
 						PersistentDescriptorSet::start(self.shared.pipeline_target.clone(), 0)
+							.add_buffer(target_size)
+							.unwrap()
 							.add_image(image_color.clone())
 							.unwrap()
 							.add_image(image_normal.clone())
@@ -145,7 +194,7 @@ impl MeshBatch {
 				self.framebuffers[image_num] =
 					ImageFramebuffer::new(Arc::downgrade(&target.images()[image_num]), framebuffer.clone());
 
-				framebuffer
+				(framebuffer as _, Some(target_size_future))
 			};
 
 		let camera_desc =
@@ -164,7 +213,7 @@ impl MeshBatch {
 		let dimensions = [framebuffer.width() as f32, framebuffer.height() as f32];
 
 		let mut command_buffer =
-			AutoCommandBufferBuilder::primary_one_time_submit(self.shared.shaders.device.clone(), window.queue().family())?
+			AutoCommandBufferBuilder::primary_one_time_submit(self.shared.shaders.target_vertices.device().clone(), window.queue().family())?
 				.begin_render_pass(
 					framebuffer.clone(),
 					true,
@@ -194,7 +243,7 @@ impl MeshBatch {
 				};
 		}
 
-		Ok(
+		Ok((
 			command_buffer.next_subpass(false)
 				.unwrap()
 				.draw(
@@ -213,8 +262,9 @@ impl MeshBatch {
 				.end_render_pass()
 				.unwrap()
 				.build()
-				.map_err(|err| match err { BuildError::OomError(err) => err, err => unreachable!("{}", err) })?
-		)
+				.map_err(|err| match err { BuildError::OomError(err) => err, err => unreachable!("{}", err) })?,
+			target_size_future
+		))
 	}
 
 	fn make_transient_input_attachment(
