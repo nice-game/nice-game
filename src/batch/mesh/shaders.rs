@@ -131,7 +131,7 @@ void main() {
 	float sharp = 1.0;
 	float wave = (softSq(texcoord_main.x, sharp) * softSq(texcoord_main.y, sharp)) * 0.5 + 0.5;
 	out_color = vec4(mix(base_color, base_color.bgr, wave), 1);
-	out_normal = vec4(normal, 1);
+	out_normal = vec4(normalize(normal), 1);
 }"]
 	struct Dummy;
 }
@@ -157,22 +157,42 @@ mod fs_target {
 	#[src = "#version 450
 layout(location = 0) out vec4 out_color;
 
-layout(set = 0, binding = 0) uniform Resolution { vec4 resolution; };
+layout(set = 0, binding = 0) uniform GBufferInfo {
+	vec4 resolution;
+	vec4 inv_projection;
+	vec4 camera_rotation;
+	vec3 camera_position;
+};
+
 layout(input_attachment_index = 0, set = 0, binding = 1) uniform subpassInput color;
 layout(input_attachment_index = 1, set = 0, binding = 2) uniform subpassInput normal;
 layout(input_attachment_index = 2, set = 0, binding = 3) uniform subpassInput depth;
 
-layout(set = 0, binding = 0) uniform Resolution { vec4 resolution; };
+vec3 quat_mul(vec4 q, vec3 v) {
+	return cross(q.xyz, cross(q.xyz, v) + v * q.w) * 2.0 + v;
+}
 
 void main() {
 	vec3 g_position_ds = vec3(gl_FragCoord.xy * resolution.zw, 2.0 * subpassLoad(depth)) - 1.0;
+	vec3 g_position_cs = vec3(g_position_ds.xy * inv_projection.xy, inv_projection.z) / (g_position_ds.z + inv_projection.w);
+	vec3 g_position_ws = quat_mul(camera_rotation, g_position_cs) + camera_position;
+
 	vec3 g_color = subpassLoad(color).rgb;
-	vec3 g_normal = subpassLoad(normal).xyz;
+	vec3 g_normal_cs = subpassLoad(normal).xyz;
 
+	vec3 light = vec3(0);
+	
+	// sunlight
+	vec3 sunColor = vec3(1.0, 0.9, 0.8) * 2.0;
 	vec3 sunDir = normalize(vec3(-1, -4, 2));
-	float light = max(0.05, dot(g_normal, sunDir));
+	light += sunColor * max(0, dot(g_normal_cs, sunDir));
 
-	out_color = vec4(g_color * light, 1);
+	// ambient
+	light = max(light, 0.02);
+
+	vec3 out_hdr = g_color * light;
+	vec3 out_tonemapped = out_hdr / (1 + out_hdr);
+	out_color = vec4(out_tonemapped, 1);
 }
 "]
 	struct Dummy;
