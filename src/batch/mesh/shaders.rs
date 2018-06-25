@@ -183,12 +183,12 @@ void main() {
 	vec3 light = vec3(0);
 	
 	// sunlight
-	vec3 sunColor = vec3(1.0, 0.9, 0.8) * 2.0;
+	vec3 sunColor = vec3(1.0, 0.8, 0.7) * 2.0;
 	vec3 sunDir = normalize(vec3(-1, -4, 2));
 	light += sunColor * max(0, dot(g_normal_cs, sunDir));
 
 	// ambient
-	light = max(light, 0.02);
+	light = max(light, 0.025);
 
 	vec3 out_hdr = g_color * light;
 	vec3 out_tonemapped = out_hdr / (1 + out_hdr);
