@@ -1,6 +1,5 @@
 extern crate byteorder;
 extern crate cgmath;
-extern crate decorum;
 extern crate futures;
 extern crate image;
 #[macro_use]

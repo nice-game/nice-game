@@ -32,7 +32,8 @@ pub struct MeshBatch {
 	framebuffers: Vec<ImageFramebuffer>,
 	target_id: ObjectId,
 	desc_target: Arc<DescriptorSet + Send + Sync + 'static>,
-	camera_desc_pool: FixedSizeDescriptorSetsPool<Arc<GraphicsPipelineAbstract + Send + Sync + 'static>>,
+	camera_desc_pool_gbuffers: FixedSizeDescriptorSetsPool<Arc<GraphicsPipelineAbstract + Send + Sync + 'static>>,
+	camera_desc_pool_target: FixedSizeDescriptorSetsPool<Arc<GraphicsPipelineAbstract + Send + Sync + 'static>>,
 	mesh_desc_pool: FixedSizeDescriptorSetsPool<Arc<GraphicsPipelineAbstract + Send + Sync + 'static>>,
 }
 impl MeshBatch {
@@ -40,7 +41,8 @@ impl MeshBatch {
 		target: &RenderTarget,
 		shared: Arc<MeshBatchShared>
 	) -> Result<(Self, impl GpuFuture), DeviceMemoryAllocError> {
-		let camera_desc_pool = FixedSizeDescriptorSetsPool::new(shared.pipeline_gbuffers.clone(), 0);
+		let camera_desc_pool_gbuffers = FixedSizeDescriptorSetsPool::new(shared.pipeline_gbuffers.clone(), 0);
+		let camera_desc_pool_target = FixedSizeDescriptorSetsPool::new(shared.pipeline_target.clone(), 1);
 		let mesh_desc_pool = FixedSizeDescriptorSetsPool::new(shared.pipeline_gbuffers.clone(), 1);
 		let (gbuffers, desc_target, future) = Self::make_gbuffers(target, &shared)?;
 
@@ -60,7 +62,8 @@ impl MeshBatch {
 				framebuffers: framebuffers,
 				target_id: target.id_root().make_id(),
 				desc_target: desc_target,
-				camera_desc_pool: camera_desc_pool,
+				camera_desc_pool_gbuffers: camera_desc_pool_gbuffers,
+				camera_desc_pool_target: camera_desc_pool_target,
 				mesh_desc_pool: mesh_desc_pool,
 			},
 			future
@@ -106,9 +109,9 @@ impl MeshBatch {
 				(framebuffer, Some(future))
 			};
 
-		let camera_desc =
+		let camera_desc_gbuffers =
 			Arc::new(
-				self.camera_desc_pool.next()
+				self.camera_desc_pool_gbuffers.next()
 					.add_buffer(camera.position_buffer.clone())
 					.unwrap()
 					.add_buffer(camera.rotation_buffer.clone())
@@ -141,7 +144,7 @@ impl MeshBatch {
 						.execute_commands(
 							mesh.make_commands(
 								&self.shared,
-								camera_desc.clone(),
+								camera_desc_gbuffers.clone(),
 								&mut self.mesh_desc_pool,
 								window.queue().family(),
 								dimensions
@@ -163,7 +166,18 @@ impl MeshBatch {
 						scissors: None,
 					},
 					vec![self.shared.shaders.target_vertices.clone()],
-					self.desc_target.clone(),
+					(
+						self.desc_target.clone(),
+						self.camera_desc_pool_target.next()
+							.add_buffer(camera.position_buffer.clone())
+							.unwrap()
+							.add_buffer(camera.rotation_buffer.clone())
+							.unwrap()
+							.add_buffer(camera.projection_buffer.clone())
+							.unwrap()
+							.build()
+							.unwrap(),
+					),
 					()
 				)
 				.unwrap()

@@ -152,9 +152,12 @@ mod fs_target {
 layout(location = 0) out vec4 out_color;
 
 layout(set = 0, binding = 0) uniform Resolution { vec4 resolution; };
-layout(input_attachment_index = 0, set = 0, binding = 1) uniform subpassInput color;
-layout(input_attachment_index = 1, set = 0, binding = 2) uniform subpassInput normal;
-layout(input_attachment_index = 2, set = 0, binding = 3) uniform subpassInput depth;
+layout(set = 0, binding = 1, input_attachment_index = 0) uniform subpassInput color;
+layout(set = 0, binding = 2, input_attachment_index = 1) uniform subpassInput normal;
+layout(set = 0, binding = 3, input_attachment_index = 2) uniform subpassInput depth;
+layout(set = 1, binding = 0) uniform CameraPos { vec3 camera_pos; };
+layout(set = 1, binding = 1) uniform CameraRot { vec4 camera_rot; };
+layout(set = 1, binding = 2) uniform CameraProj { vec4 camera_proj; };
 
 void main() {
 	//subpassLoad(depth);
