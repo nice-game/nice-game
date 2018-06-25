@@ -169,15 +169,13 @@ vec3 quat_mul(vec4 q, vec3 v) {
 	return cross(q.xyz, cross(q.xyz, v) + v * q.w) * 2.0 + v;
 }
 
+vec3 surface_normal(vec3 position) {
+	return normalize(cross(dFdx(position), dFdy(position)));
+}
+
 void main() {
-	vec4 inv_projection = vec4(
-		camera_proj.w / camera_proj.x,
-		camera_proj.w / camera_proj.y,
-		-camera_proj.w,
-		camera_proj.z
-	);
 	vec3 g_position_ds = vec3(gl_FragCoord.xy * resolution.zw, 2.0 * subpassLoad(depth)) - 1.0;
-	vec3 g_position_cs = vec3(g_position_ds.xy * inv_projection.xy, inv_projection.z) / (g_position_ds.z + inv_projection.w);
+	vec3 g_position_cs = vec3(g_position_ds.xy / camera_proj.xy, -1.0) * camera_proj.w / (g_position_ds.z + camera_proj.z);
 	vec3 g_position_ws = quat_mul(camera_rot, g_position_cs) + camera_pos;
 
 	vec3 g_color = subpassLoad(color).rgb;
@@ -195,7 +193,7 @@ void main() {
 
 	vec3 out_hdr = g_color * light;
 	vec3 out_tonemapped = out_hdr / (1 + out_hdr);
-	out_color = vec4(out_tonemapped, 1);
+	out_color = vec4(surface_normal(g_position_ws),1);//out_tonemapped, 1);
 }
 "]
 	struct Dummy;
