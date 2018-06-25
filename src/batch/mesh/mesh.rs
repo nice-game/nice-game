@@ -33,7 +33,6 @@ pub struct Mesh {
 	normals: Arc<ImmutableBuffer<[[f32; 3]]>>,
 	texcoords_main: Arc<ImmutableBuffer<[[f32; 2]]>>,
 	materials: Vec<Material>,
-	material_stride: usize,
 	material_descs: Vec<Arc<DescriptorSet + Send + Sync + 'static>>,
 }
 impl Mesh {
@@ -208,7 +207,6 @@ impl Mesh {
 					normals: normals,
 					texcoords_main: texcoords_main,
 					materials: materials,
-					material_stride: material_stride,
 					material_descs: material_descs,
 				},
 				position_future
