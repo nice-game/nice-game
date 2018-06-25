@@ -128,9 +128,9 @@ float softSq(float x, float y) {
 }
 
 void main() {
-	float sharp = 1.0;
+	float sharp = 2.0;
 	float wave = (softSq(texcoord_main.x, sharp) * softSq(texcoord_main.y, sharp)) * 0.5 + 0.5;
-	out_color = vec4(mix(base_color, base_color.bgr, wave), 1);
+	out_color = vec4(wave);//mix(base_color, base_color.bgr, wave), 1);
 	out_normal = vec4(normalize(normal), 1);
 }"]
 	struct Dummy;
@@ -187,11 +187,14 @@ void main() {
 	light += sunColor * max(0, dot(g_normal_cs, sunDir));
 
 	// point light
-	vec3 lightColor = vec3(0.7, 0.85, 1.0) * 100.0;
-	vec3 lightPos = vec3(14.5, -5.5, -34.5);
+	float lightRadius = 5.0;
+	vec3 lightColor = vec3(0.7, 0.85, 1.0) * sqrt(lightRadius);
+	vec3 lightPos = vec3(14.5, -11, -28.5);
 	float lightDistance = distance(lightPos, g_position_ws);
 	vec3 lightDir = normalize(lightPos - g_position_ws);
-	light += lightColor * max(0, dot(g_normal_ws, lightDir)) / (lightDistance * lightDistance);
+	float lightIntensity = max(0, dot(g_normal_ws, lightDir));
+	lightIntensity *= sqrt(max(0, (lightRadius - lightDistance) / lightRadius));
+	light += lightColor * lightIntensity / (lightDistance * lightDistance);
 
 	// ambient
 	light = max(light, 0.025);
