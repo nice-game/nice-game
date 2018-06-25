@@ -170,8 +170,12 @@ vec3 quat_mul(vec4 q, vec3 v) {
 }
 
 void main() {
-	vec4 inv_projection =
-		vec4(camera_proj.w / camera_proj.x, camera_proj.w / camera_proj.y, -camera_proj.w, camera_proj.z);
+	vec4 inv_projection = vec4(
+		camera_proj.w / camera_proj.x,
+		camera_proj.w / camera_proj.y,
+		-camera_proj.w,
+		camera_proj.z
+	);
 	vec3 g_position_ds = vec3(gl_FragCoord.xy * resolution.zw, 2.0 * subpassLoad(depth)) - 1.0;
 	vec3 g_position_cs = vec3(g_position_ds.xy * inv_projection.xy, inv_projection.z) / (g_position_ds.z + inv_projection.w);
 	vec3 g_position_ws = quat_mul(camera_rot, g_position_cs) + camera_pos;
