@@ -1,6 +1,7 @@
-pub use winit::{ Event, WindowEvent, WindowId };
+pub use winit::{ CursorState, Event, MouseButton, WindowEvent, WindowId };
 
 use { Context, ObjectIdRoot, RenderTarget };
+use cgmath::Vector2;
 use std::{ collections::HashMap, iter::Iterator, sync::{ Arc, atomic::{ AtomicBool, Ordering } }};
 use vulkano::{
 	device::{ Device, DeviceExtensions, Queue },
@@ -184,6 +185,18 @@ impl Window {
 			};
 
 		Ok(())
+	}
+
+	pub fn get_inner_size(&self) -> Option<Vector2<u32>> {
+		self.surface.window().get_inner_size().map(|size| size.into())
+	}
+
+	pub fn set_cursor_position(&self, pos: Vector2<i32>) -> Result<(), ()> {
+		self.surface.window().set_cursor_position(pos.x, pos.y)
+	}
+
+	pub fn set_cursor_state(&self, state: CursorState) -> Result<(), String> {
+		self.surface.window().set_cursor_state(state)
 	}
 
 	pub(super) fn device(&self) -> &Arc<Device> {

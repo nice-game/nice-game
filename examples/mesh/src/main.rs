@@ -12,7 +12,7 @@ use nice_game::{
 	Version,
 	batch::mesh::{ Mesh, MeshBatch, MeshBatchShaders, MeshBatchShared },
 	camera::Camera,
-	window::{ Event, EventsLoop, Window, WindowEvent },
+	window::{ CursorState, Event, EventsLoop, MouseButton, Window, WindowEvent },
 };
 use simplelog::{ LevelFilter, SimpleLogger };
 
@@ -52,6 +52,13 @@ fn main() {
 		let mut done = false;
 		events.poll_events(|event| match event {
 			Event::WindowEvent { event: WindowEvent::Closed, .. } => done = true,
+			Event::WindowEvent { event: WindowEvent::Focused(false), .. } => {
+				window.set_cursor_state(CursorState::Normal).unwrap();
+			},
+			Event::WindowEvent { event: WindowEvent::MouseInput{ button: MouseButton::Left, .. }, .. } => {
+				window.set_cursor_position(window.get_inner_size().unwrap().cast().unwrap() / 2).unwrap();
+				window.set_cursor_state(CursorState::Grab).unwrap();
+			},
 			Event::WindowEvent { event: WindowEvent::Resized(_, _), .. } => camera = make_camera(&window),
 			_ => (),
 		});
