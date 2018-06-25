@@ -169,31 +169,38 @@ vec3 quat_mul(vec4 q, vec3 v) {
 	return cross(q.xyz, cross(q.xyz, v) + v * q.w) * 2.0 + v;
 }
 
-vec3 surface_normal(vec3 position) {
-	return normalize(cross(dFdx(position), dFdy(position)));
-}
-
 void main() {
-	vec3 g_position_ds = vec3(gl_FragCoord.xy * resolution.zw, 2.0 * subpassLoad(depth)) - 1.0;
+	vec3 g_position_ds = vec3(gl_FragCoord.xy * resolution.zw, 2.0 * subpassLoad(depth).x) - 1.0;
 	vec3 g_position_cs = vec3(g_position_ds.xy / camera_proj.xy, -1.0) * camera_proj.w / (g_position_ds.z + camera_proj.z);
 	vec3 g_position_ws = quat_mul(camera_rot, g_position_cs) + camera_pos;
 
-	vec3 g_color = subpassLoad(color).rgb;
 	vec3 g_normal_cs = subpassLoad(normal).xyz;
+	vec3 g_normal_ws = quat_mul(camera_rot, g_normal_cs);
+
+	vec3 g_color = subpassLoad(color).rgb;
 
 	vec3 light = vec3(0);
 
 	// sunlight
-	vec3 sunColor = vec3(1.0, 0.8, 0.7) * 2.0;
+	vec3 sunColor = vec3(1.0, 0.85, 0.7) * 0.0;
 	vec3 sunDir = normalize(vec3(-1, -4, 2));
 	light += sunColor * max(0, dot(g_normal_cs, sunDir));
+
+	// point light
+	vec3 lightColor = vec3(0.7, 0.85, 1.0) * 100.0;
+	vec3 lightPos = vec3(14.5, -5.5, -34.5);
+	float lightDistance = distance(lightPos, g_position_ws);
+	vec3 lightDir = normalize(lightPos - g_position_ws);
+	light += lightColor * max(0, dot(g_normal_ws, lightDir)) / (lightDistance * lightDistance);
 
 	// ambient
 	light = max(light, 0.025);
 
-	vec3 out_hdr = g_color * light;
+	float exposure = 1.0;
+	
+	vec3 out_hdr = g_color * light * exposure;
 	vec3 out_tonemapped = out_hdr / (1 + out_hdr);
-	out_color = vec4(surface_normal(g_position_ws),1);//out_tonemapped, 1);
+	out_color = vec4(out_tonemapped, 1);
 }
 "]
 	struct Dummy;
