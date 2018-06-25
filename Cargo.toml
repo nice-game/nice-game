@@ -9,7 +9,6 @@ lto = true
 [dependencies]
 byteorder = "1.2"
 cgmath = { version = "0.16", features = ["swizzle"] }
-decorum = "0.0"
 futures = "0.2"
 image = "0.19"
 lazy_static = "1.0"
