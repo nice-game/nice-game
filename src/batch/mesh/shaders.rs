@@ -128,7 +128,7 @@ float softSq(float x, float y) {
 }
 
 void main() {
-	float sharp = 2.0;
+	float sharp = 2.5;
 	float wave = (softSq(texcoord_main.x, sharp) * softSq(texcoord_main.y, sharp)) * 0.5 + 0.5;
 	out_color = vec4(wave);//mix(base_color, base_color.bgr, wave), 1);
 	out_normal = vec4(normalize(normal), 1);
@@ -182,7 +182,7 @@ void main() {
 	vec3 light = vec3(0);
 
 	// sunlight
-	vec3 sunColor = vec3(1.0, 0.85, 0.7) * 0.0;
+	vec3 sunColor = vec3(1.0, 0.85, 0.7) * 0.5;
 	vec3 sunDir = normalize(vec3(-1, -4, 2));
 	light += sunColor * max(0, dot(g_normal_cs, sunDir));
 
@@ -197,9 +197,9 @@ void main() {
 	light += lightColor * lightIntensity / (lightDistance * lightDistance);
 
 	// ambient
-	light = max(light, 0.025);
+	light = max(light, 0.001);
 
-	float exposure = 1.0;
+	float exposure = 1.618;
 	
 	vec3 out_hdr = g_color * light * exposure;
 	vec3 out_tonemapped = out_hdr / (1 + out_hdr);
