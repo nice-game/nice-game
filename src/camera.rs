@@ -22,7 +22,7 @@ impl Camera {
 		aspect: f32,
 		fovx: f32,
 		znear: f32,
-		zfar: f32
+		zfar: f32,
 	) -> Result<Self, DeviceMemoryAllocError> {
 		let position_pool = CpuBufferPool::uniform_buffer(window.device().clone());
 		let rotation_pool = CpuBufferPool::uniform_buffer(window.device().clone());
@@ -42,7 +42,12 @@ impl Camera {
 		})
 	}
 
-	pub fn set_position(
+	pub fn set_position(&mut self, position: Vector3<f32>) -> Result<(), DeviceMemoryAllocError> {
+		self.position_buffer = self.position_pool.next(position)?;
+		Ok(())
+	}
+
+	pub fn set_projection(
 		&mut self,
 		aspect: f32,
 		fovx: f32,
@@ -50,11 +55,6 @@ impl Camera {
 		zfar: f32
 	) -> Result<(), DeviceMemoryAllocError> {
 		self.projection_buffer = self.projection_pool.next(Self::projection(aspect, fovx, znear, zfar))?;
-		Ok(())
-	}
-
-	pub fn set_projection(&mut self, position: Vector3<f32>) -> Result<(), DeviceMemoryAllocError> {
-		self.position_buffer = self.position_pool.next(position)?;
 		Ok(())
 	}
 
