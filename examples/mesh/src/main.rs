@@ -122,10 +122,10 @@ fn main() {
 
 		let yaw = Quaternion::from_angle_y(Rad(-character.rotation.x * PI / 2.0));
 
-		if w_down { character.position += yaw.rotate_vector(vec3(0.0, 0.0, 0.05)); }
-		if a_down { character.position += yaw.rotate_vector(vec3(0.05, 0.0, 0.0)); }
-		if s_down { character.position += yaw.rotate_vector(vec3(0.0, 0.0, -0.05)); }
-		if d_down { character.position += yaw.rotate_vector(vec3(-0.05, 0.0, 0.0)); }
+		if w_down { character.position += yaw.rotate_vector(vec3(0.0, 0.0, -0.05)); }
+		if a_down { character.position += yaw.rotate_vector(vec3(-0.05, 0.0, 0.0)); }
+		if s_down { character.position += yaw.rotate_vector(vec3(0.0, 0.0, 0.05)); }
+		if d_down { character.position += yaw.rotate_vector(vec3(0.05, 0.0, 0.0)); }
 		if space_down { character.position.y -= 0.05; }
 		if shift_down { character.position.y += 0.05; }
 
