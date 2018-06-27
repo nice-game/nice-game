@@ -81,7 +81,8 @@ layout(set = 0, binding = 0) uniform CameraPos { vec3 camera_pos; };
 layout(set = 0, binding = 1) uniform CameraRot { vec4 camera_rot; };
 layout(set = 0, binding = 2) uniform CameraProj { vec4 camera_proj; };
 
-layout(set = 1, binding = 0) uniform MeshDynamic { vec3 mesh_pos; };
+layout(set = 1, binding = 0) uniform MeshPos { vec3 mesh_pos; };
+layout(set = 1, binding = 1) uniform MeshRot { vec4 mesh_rot; };
 
 layout(set = 2, binding = 0) uniform Material {
 	uint light_penetration;
@@ -105,11 +106,12 @@ vec4 perspective(vec4 proj, vec3 pos) {
 void main() {
 	// stupid math library puts w first, so we flip it here
 	vec4 camera_rot = camera_rot.wxyz;
+	vec4 mesh_rot = mesh_rot.wxyz;
 
 	out_normal = quat_mul(quat_inv(camera_rot), normal);
 	out_texcoord_main = texcoord_main;
 	out_base_color = base_color;
-	gl_Position = perspective(camera_proj, quat_mul(quat_inv(camera_rot), position + mesh_pos - camera_pos));
+	gl_Position = perspective(camera_proj, quat_mul(quat_inv(camera_rot), quat_mul(mesh_rot, position) + mesh_pos - camera_pos));
 }"]
 	struct Dummy;
 }
