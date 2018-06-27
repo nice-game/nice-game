@@ -42,7 +42,15 @@ fn main() {
 	let mesh_batch_shared = MeshBatchShared::new(mesh_batch_shaders, window.format());
 
 	let (mesh, mesh_future) =
-		block_on(Mesh::from_file(&window, &mesh_batch_shared, [0.0, 0.0, 3.0], "examples/assets/de_rebelzone.nmd")).unwrap();
+		block_on(
+			Mesh::from_file(
+				&window,
+				&mesh_batch_shared,
+				vec3(0.0, 0.0, 3.0),
+				Quaternion::one(),
+				"examples/assets/de_rebelzone.nmd"
+			).unwrap()
+		).unwrap();
 
 	let (mut mesh_batch, mesh_batch_future) = MeshBatch::new(&window, mesh_batch_shared).unwrap();
 	mesh_batch.add_mesh(mesh);
