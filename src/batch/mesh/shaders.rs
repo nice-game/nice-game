@@ -105,8 +105,8 @@ vec4 perspective(vec4 proj, vec3 pos) {
 
 void main() {
 	// stupid math library puts w first, so we flip it here
-	vec4 camera_rot = camera_rot.wxyz;
-	vec4 mesh_rot = mesh_rot.wxyz;
+	vec4 camera_rot = camera_rot.yzwx;
+	vec4 mesh_rot = mesh_rot.yzwx;
 
 	out_normal = quat_mul(quat_inv(camera_rot), normal);
 	out_texcoord_main = texcoord_main;
@@ -176,7 +176,7 @@ vec3 quat_mul(vec4 q, vec3 v) {
 
 void main() {
 	// stupid math library puts w first, so we flip it here
-	vec4 camera_rot = camera_rot.wxyz;
+	vec4 camera_rot = camera_rot.yzwx;
 
 	vec3 g_position_ds = vec3(gl_FragCoord.xy * resolution.zw, 2.0 * subpassLoad(depth).x) - 1.0;
 	vec3 g_position_cs = vec3(g_position_ds.xy / camera_proj.xy, -1.0) * camera_proj.w / (g_position_ds.z + camera_proj.z);
