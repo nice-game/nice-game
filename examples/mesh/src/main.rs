@@ -56,10 +56,21 @@ fn main() {
 	mesh_batch.add_mesh(mesh);
 
 	let mut character = Character::new();
-	let mut camera = make_camera(&window);
+	let [win_width, win_height] = window.images()[0].dimensions().width_height();
+	let mut camera =
+		Camera::new(
+			&window,
+			Vector3::zero(),
+			Quaternion::one(),
+			win_width as f32 / win_height as f32,
+			100.0,
+			0.05,
+			1500.0,
+		).unwrap();
 
 	window.join_future(mesh_future.join(mesh_batch_shaders_future).join(mesh_batch_future));
 
+	let mut controls_active = false;
 	let mut w_down = false;
 	let mut a_down = false;
 	let mut s_down = false;
@@ -78,17 +89,18 @@ fn main() {
 			Event::WindowEvent { event: WindowEvent::AxisMotion { axis, value, .. } , .. } => {
 				println!("axis {}, value {}", axis, value);
 			},
-			Event::WindowEvent { event: WindowEvent::Closed, .. } => {
-				window.set_cursor_state(CursorState::Normal).unwrap();
-				done = true;
-			},
+			Event::WindowEvent { event: WindowEvent::Closed, .. } => done = true,
 			Event::WindowEvent { event: WindowEvent::Focused(false), .. } => {
 				window.set_cursor_state(CursorState::Normal).unwrap();
+				controls_active = false;
 			},
 			Event::WindowEvent { event: WindowEvent::MouseInput{ button: MouseButton::Left, .. }, .. } => {
 				window.set_cursor_state(CursorState::Grab).unwrap();
+				controls_active = true;
 			},
-			Event::WindowEvent { event: WindowEvent::Resized(_, _), .. } => camera = make_camera(&window),
+			Event::WindowEvent { event: WindowEvent::Resized(_, _), .. } => {
+				camera.set_projection(win_width as f32 / win_height as f32, 100.0, 0.05, 1500.0).unwrap();
+			},
 			_ => (),
 		});
 
@@ -107,10 +119,20 @@ fn main() {
 				RawEvent::KeyboardEvent(_,  KeyId::Space, State::Released) => space_down = false,
 				RawEvent::KeyboardEvent(_,  KeyId::Shift, State::Pressed) => shift_down = true,
 				RawEvent::KeyboardEvent(_,  KeyId::Shift, State::Released) => shift_down = false,
-				RawEvent::MouseMoveEvent(_, x, y) => {
+				RawEvent::MouseMoveEvent(_, x, y) => if controls_active {
 					character.rotation += vec2(x as f32 / 300.0, y as f32 / 300.0);
-					if character.rotation.y > 1.0 { character.rotation.y = 1.0; }
-					else if character.rotation.y < -1.0 { character.rotation.y = -1.0; }
+
+					if character.rotation.x > 2.0 {
+						character.rotation.x -= 4.0;
+					} else if character.rotation.x < -2.0 {
+						character.rotation.x += 4.0;
+					}
+
+					if character.rotation.y > 1.0 {
+						character.rotation.y = 1.0;
+					} else if character.rotation.y < -1.0 {
+						character.rotation.y = -1.0;
+					}
 				},
 				_ => (),
 			}
@@ -122,12 +144,12 @@ fn main() {
 
 		let yaw = Quaternion::from_angle_y(Rad(-character.rotation.x * PI / 2.0));
 
-		if w_down { character.position += yaw.rotate_vector(vec3(0.0, 0.0, -0.05)); }
-		if a_down { character.position += yaw.rotate_vector(vec3(-0.05, 0.0, 0.0)); }
-		if s_down { character.position += yaw.rotate_vector(vec3(0.0, 0.0, 0.05)); }
-		if d_down { character.position += yaw.rotate_vector(vec3(0.05, 0.0, 0.0)); }
-		if space_down { character.position.y -= 0.05; }
-		if shift_down { character.position.y += 0.05; }
+		if controls_active && w_down { character.position += yaw.rotate_vector(vec3(0.0, 0.0, -0.5)); }
+		if controls_active && a_down { character.position += yaw.rotate_vector(vec3(-0.5, 0.0, 0.0)); }
+		if controls_active && s_down { character.position += yaw.rotate_vector(vec3(0.0, 0.0, 0.5)); }
+		if controls_active && d_down { character.position += yaw.rotate_vector(vec3(0.5, 0.0, 0.0)); }
+		if controls_active && space_down { character.position.y -= 0.5; }
+		if controls_active && shift_down { character.position.y += 0.5; }
 
 		camera.set_position(character.position).unwrap();
 		camera.set_rotation(yaw * Quaternion::from_angle_x(Rad(character.rotation.y * PI / 2.0))).unwrap();
@@ -142,19 +164,8 @@ fn main() {
 			})
 			.unwrap();
 	}
-}
 
-fn make_camera(window: &Window) -> Camera {
-	let [width, height] = window.images()[0].dimensions().width_height();
-	Camera::new(
-		&window,
-		vec3(14.5, -10.5, -34.5),
-		Quaternion::one(),
-		width as f32 / height as f32,
-		100.0,
-		0.05,
-		1500.0
-	).unwrap()
+	window.set_cursor_state(CursorState::Normal).unwrap();
 }
 
 struct Character {
@@ -163,6 +174,6 @@ struct Character {
 }
 impl Character {
 	fn new() -> Self {
-		Self { position:vec3(14.5, -10.5, -34.5), rotation: Vector2::zero() }
+		Self { position: vec3(22.0, 10.0, -26.0), rotation: vec2(-1.5, 0.0) }
 	}
 }
