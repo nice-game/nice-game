@@ -23,7 +23,7 @@ use vulkano::{
 	sync::GpuFuture,
 };
 
-const ALBEDO_FORMAT: Format = Format::B8G8R8Srgb;
+const ALBEDO_FORMAT: Format = Format::A2B10G10R10UnormPack32;
 const NORMAL_FORMAT: Format = Format::R32G32B32A32Sfloat;
 const DEPTH_FORMAT: Format = Format::D16Unorm;
 
