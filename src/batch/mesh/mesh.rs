@@ -1,6 +1,8 @@
 use batch::mesh::MeshBatchShared;
 use byteorder::{LE, ReadBytesExt};
+use cgmath::{ Quaternion, Vector3 };
 use cpu_pool::{ spawn_fs, CpuFuture };
+use futures::prelude::*;
 use std::{
 	fs::File,
 	io::{ self, prelude::*, SeekFrom },
@@ -11,13 +13,21 @@ use std::{
 };
 use vulkano::{
 	OomError,
-	buffer::{ BufferAccess, BufferSlice, BufferUsage, CpuAccessibleBuffer, ImmutableBuffer },
+	buffer::{
+		BufferAccess,
+		BufferSlice,
+		BufferUsage,
+		CpuAccessibleBuffer,
+		CpuBufferPool,
+		ImmutableBuffer,
+		cpu_pool::CpuBufferPoolSubbuffer,
+	},
 	command_buffer::{ AutoCommandBuffer, AutoCommandBufferBuilder, BuildError, DynamicState },
 	descriptor::{ DescriptorSet, descriptor_set::{ FixedSizeDescriptorSetsPool, PersistentDescriptorSet } },
 	device::Queue,
 	format::Format,
 	instance::QueueFamily,
-	memory::DeviceMemoryAllocError,
+	memory::{ DeviceMemoryAllocError, pool::StdMemoryPool },
 	pipeline::{
 		GraphicsPipelineAbstract,
 		vertex::{ AttributeInfo, IncompatibleVertexDefinitionError, InputRate, VertexDefinition, VertexSource },
@@ -28,7 +38,10 @@ use vulkano::{
 use window::Window;
 
 pub struct Mesh {
-	position: Arc<ImmutableBuffer<[f32; 3]>>,
+	position_pool: CpuBufferPool<Vector3<f32>>,
+	rotation_pool: CpuBufferPool<Quaternion<f32>>,
+	position: CpuBufferPoolSubbuffer<Vector3<f32>, Arc<StdMemoryPool>>,
+	rotation: CpuBufferPoolSubbuffer<Quaternion<f32>, Arc<StdMemoryPool>>,
 	positions: Arc<ImmutableBuffer<[[f32; 3]]>>,
 	normals: Arc<ImmutableBuffer<[[f32; 3]]>>,
 	texcoords_main: Arc<ImmutableBuffer<[[f32; 2]]>>,
@@ -39,17 +52,17 @@ impl Mesh {
 	pub fn from_file<P>(
 		window: &Window,
 		shared: &MeshBatchShared,
-		position: [f32; 3],
+		position: Vector3<f32>,
+		rotation: Quaternion<f32>,
 		path: P
-	) -> CpuFuture<(Mesh, impl GpuFuture + Send + Sync + 'static), MeshFromFileError>
+	) -> impl Future<Item = (Mesh, impl GpuFuture + Send + Sync + 'static), Error = MeshFromFileError>
 	where P: AsRef<Path> + Send + 'static
 	{
+		let device = window.device().clone();
 		let queue = window.queue().clone();
 		let pipeline_gbuffers = shared.pipeline_gbuffers.clone();
-		spawn_fs(move |_| {
-			let (position, position_future) =
-				ImmutableBuffer::from_data(position, BufferUsage::uniform_buffer(), queue.clone())?;
 
+		spawn_fs(move |_| {
 			let mut file = File::open(path)?;
 
 			let mut magic_number = [0; 4];
@@ -196,27 +209,90 @@ impl Mesh {
 							.unwrap()
 							.build()
 							.unwrap()
-					 ) as _
+					) as _
 				})
 				.collect();
 
+			let position_pool = CpuBufferPool::uniform_buffer(device.clone());
+			let rotation_pool = CpuBufferPool::uniform_buffer(device);
+			let position = position_pool.next(position)?;
+			let rotation = rotation_pool.next(rotation)?;
+
 			Ok((
 				Mesh {
+					position_pool: position_pool,
+					rotation_pool: rotation_pool,
 					position: position,
+					rotation: rotation,
 					positions: positions,
 					normals: normals,
 					texcoords_main: texcoords_main,
 					materials: materials,
 					material_descs: material_descs,
 				},
-				position_future
-					.join(positions_future)
+				positions_future
 					.join(normals_future)
 					.join(texcoords_main_future)
 					.join(indices_future)
 					.join(material_buf_future)
 			))
 		})
+	}
+
+	pub fn set_position(&mut self, position: Vector3<f32>) -> Result<(), DeviceMemoryAllocError> {
+		self.position = self.position_pool.next(position)?;
+		Ok(())
+	}
+
+	pub fn set_rotation(&mut self, rotation: Quaternion<f32>) -> Result<(), DeviceMemoryAllocError> {
+		self.rotation = self.rotation_pool.next(rotation)?;
+		Ok(())
+	}
+
+	pub(super) fn make_commands(
+		&mut self,
+		shared: &MeshBatchShared,
+		camera_desc: impl DescriptorSet + Clone + Send + Sync + 'static,
+		mesh_desc_pool: &mut FixedSizeDescriptorSetsPool<Arc<GraphicsPipelineAbstract + Send + Sync + 'static>>,
+		queue_family: QueueFamily,
+		dimensions: [f32; 2],
+	) -> Result<AutoCommandBuffer, OomError> {
+		let mut cmd = AutoCommandBufferBuilder
+			::secondary_graphics_one_time_submit(
+				shared.shaders.target_vertices.device().clone(),
+				queue_family,
+				shared.subpass_gbuffers.clone()
+			)?;
+
+		for (i, mat) in self.materials.iter().enumerate() {
+			cmd = cmd
+				.draw_indexed(
+					shared.pipeline_gbuffers.clone(),
+					DynamicState {
+						line_width: None,
+						viewports:
+							Some(vec![Viewport { origin: [0.0, 0.0], dimensions: dimensions, depth_range: 0.0..1.0 }]),
+						scissors: None,
+					},
+					vec![self.positions.clone(), self.normals.clone(), self.texcoords_main.clone()],
+					mat.indices.clone(),
+					(
+						camera_desc.clone(),
+						mesh_desc_pool.next()
+							.add_buffer(self.position.clone())
+							.unwrap()
+							.add_buffer(self.rotation.clone())
+							.unwrap()
+							.build()
+							.unwrap(),
+						self.material_descs[i].clone()
+					),
+					()
+				)
+				.unwrap();
+		}
+
+		Ok(cmd.build().map_err(|err| match err { BuildError::OomError(err) => err, err => unreachable!("{}", err) })?)
 	}
 
 	fn buffer_from_file<T>(
@@ -238,43 +314,6 @@ impl Mesh {
 			}
 		}
 		ImmutableBuffer::from_buffer(tmpbuf, usage, queue).map_err(|e| e.into())
-	}
-
-	pub(super) fn make_commands(
-		&mut self,
-		shared: &MeshBatchShared,
-		camera_desc: impl DescriptorSet + Clone + Send + Sync + 'static,
-		mesh_desc_pool: &mut FixedSizeDescriptorSetsPool<Arc<GraphicsPipelineAbstract + Send + Sync + 'static>>,
-		queue_family: QueueFamily,
-		dimensions: [f32; 2],
-	) -> Result<AutoCommandBuffer, OomError> {
-		let mut cmd = AutoCommandBufferBuilder
-			::secondary_graphics_one_time_submit(
-				shared.shaders.target_vertices.device().clone(),
-				queue_family,
-				shared.subpass_gbuffers.clone()
-			)?;
-
-		for (i, mat) in self.materials.iter().enumerate() {
-			let mesh_desc = Arc::new(mesh_desc_pool.next().add_buffer(self.position.clone()).unwrap().build().unwrap());
-			cmd = cmd
-				.draw_indexed(
-					shared.pipeline_gbuffers.clone(),
-					DynamicState {
-						line_width: None,
-						viewports:
-							Some(vec![Viewport { origin: [0.0, 0.0], dimensions: dimensions, depth_range: 0.0..1.0 }]),
-						scissors: None,
-					},
-					vec![self.positions.clone(), self.normals.clone(), self.texcoords_main.clone()],
-					mat.indices.clone(),
-					(camera_desc.clone(), mesh_desc.clone(), self.material_descs[i].clone()),
-					()
-				)
-				.unwrap();
-		}
-
-		Ok(cmd.build().map_err(|err| match err { BuildError::OomError(err) => err, err => unreachable!("{}", err) })?)
 	}
 }
 
