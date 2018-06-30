@@ -23,6 +23,7 @@ use vulkano::{
 	sync::GpuFuture,
 };
 
+const ALBEDO_FORMAT: Format = Format::B8G8R8Srgb;
 const NORMAL_FORMAT: Format = Format::R32G32B32A32Sfloat;
 const DEPTH_FORMAT: Format = Format::D16Unorm;
 
@@ -228,7 +229,7 @@ impl MeshBatch {
 			Self::make_transient_input_attachment(
 				shared.shaders.target_vertices.device().clone(),
 				dimensions,
-				target.format()
+				ALBEDO_FORMAT
 			)?;
 		let image_normal =
 			Self::make_transient_input_attachment(
