@@ -48,7 +48,7 @@ fn main() {
 				&mesh_batch_shared,
 				vec3(0.0, 0.0, 3.0),
 				Quaternion::one(),
-				"examples/assets/de_rebelzone.nmd"
+				"examples/assets/de_rebelzone/de_rebelzone.nmd"
 			).unwrap()
 		).unwrap();
 
