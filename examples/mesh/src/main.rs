@@ -49,7 +49,7 @@ fn main() {
 				vec3(0.0, 0.0, 3.0),
 				Quaternion::one(),
 				"examples/assets/de_rebelzone/de_rebelzone.nmd"
-			).unwrap()
+			)
 		).unwrap();
 
 	let (mut mesh_batch, mesh_batch_future) = MeshBatch::new(&window, mesh_batch_shared).unwrap();
