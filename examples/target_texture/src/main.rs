@@ -34,7 +34,7 @@ fn main() {
 
 	let target = TargetTexture::new(&window, [400, 400]).unwrap();
 
-	let texture =
+	let (texture, texture_future) =
 		block_on(ImmutableTexture::from_file_with_format(&window, "examples/assets/colors.png", ImageFormat::PNG))
 			.unwrap();
 
@@ -53,7 +53,8 @@ fn main() {
 	window_sprite_batch.add_sprite(target_sprite);
 
 	window.join_future(
-		shaders_future.join(texture_sprite_future)
+		shaders_future.join(texture_future)
+			.join(texture_sprite_future)
 			.join(target_sprite_batch_future)
 			.join(target_sprite_future)
 			.join(window_sprite_batch_future)
