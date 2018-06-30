@@ -5,7 +5,7 @@ use std::{ fs::File, io::{ self, prelude::* }, path::Path, sync::Arc };
 use texture::Texture;
 use vulkano::{
 	OomError,
-	format::R8G8B8A8Srgb,
+	format::Format,
 	image::{ Dimensions, ImageCreationError, ImageViewAccess, ImmutableImage },
 	memory::DeviceMemoryAllocError,
 	sync::{ FlushError, GpuFuture },
@@ -34,7 +34,7 @@ impl ImmutableTexture {
 					ImmutableImage::from_iter(
 						img.into_iter(),
 						Dimensions::Dim2d { width: width, height: height },
-						R8G8B8A8Srgb,
+						Format::R8G8B8A8Srgb,
 						queue,
 					)?;
 
