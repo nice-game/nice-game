@@ -1,7 +1,7 @@
 use batch::mesh::MeshBatchShared;
 use byteorder::{LE, ReadBytesExt};
 use cgmath::{ Quaternion, Vector3 };
-use cpu_pool::{ spawn_fs, CpuFuture };
+use cpu_pool::spawn_fs;
 use futures::prelude::*;
 use std::{
 	fs::File,
