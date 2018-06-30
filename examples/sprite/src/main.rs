@@ -33,7 +33,7 @@ fn main() {
 
 	let sprite_batch_shared = SpriteBatchShared::new(shaders, window.format());
 
-	let texture =
+	let (texture, texture_future) =
 		block_on(
 			ImmutableTexture::from_file_with_format(
 				&window,
@@ -46,7 +46,7 @@ fn main() {
 	let (mut sprite_batch, sprite_batch_future) = SpriteBatch::new(&window, &window, sprite_batch_shared).unwrap();
 	sprite_batch.add_sprite(sprite);
 
-	window.join_future(shaders_future.join(sprite_future).join(sprite_batch_future));
+	window.join_future(shaders_future.join(texture_future).join(sprite_future).join(sprite_batch_future));
 
 	loop {
 		let mut done = false;
