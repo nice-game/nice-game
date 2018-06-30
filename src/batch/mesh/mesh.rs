@@ -2,6 +2,7 @@ use batch::mesh::MeshBatchShared;
 use byteorder::{LE, ReadBytesExt};
 use cgmath::{ Quaternion, Vector3 };
 use cpu_pool::{ spawn_fs, CpuFuture };
+use futures::prelude::*;
 use std::{
 	fs::File,
 	io::{ self, prelude::*, SeekFrom },
@@ -54,17 +55,14 @@ impl Mesh {
 		position: Vector3<f32>,
 		rotation: Quaternion<f32>,
 		path: P
-	) -> Result<CpuFuture<(Mesh, impl GpuFuture + Send + Sync + 'static), MeshFromFileError>, DeviceMemoryAllocError>
+	) -> impl Future<Item = (Mesh, impl GpuFuture + Send + Sync + 'static), Error = MeshFromFileError>
 	where P: AsRef<Path> + Send + 'static
 	{
-		let position_pool = CpuBufferPool::uniform_buffer(window.device().clone());
-		let rotation_pool = CpuBufferPool::uniform_buffer(window.device().clone());
-		let position = position_pool.next(position)?;
-		let rotation = rotation_pool.next(rotation)?;
-
+		let device = window.device().clone();
 		let queue = window.queue().clone();
 		let pipeline_gbuffers = shared.pipeline_gbuffers.clone();
-		Ok(spawn_fs(move |_| {
+
+		spawn_fs(move |_| {
 			let mut file = File::open(path)?;
 
 			let mut magic_number = [0; 4];
@@ -215,6 +213,11 @@ impl Mesh {
 				})
 				.collect();
 
+			let position_pool = CpuBufferPool::uniform_buffer(device.clone());
+			let rotation_pool = CpuBufferPool::uniform_buffer(device);
+			let position = position_pool.next(position)?;
+			let rotation = rotation_pool.next(rotation)?;
+
 			Ok((
 				Mesh {
 					position_pool: position_pool,
@@ -233,7 +236,7 @@ impl Mesh {
 					.join(indices_future)
 					.join(material_buf_future)
 			))
-		}))
+		})
 	}
 
 	pub fn set_position(&mut self, position: Vector3<f32>) -> Result<(), DeviceMemoryAllocError> {
