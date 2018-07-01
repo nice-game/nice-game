@@ -172,7 +172,7 @@ float softSq(float x, float y) {
 }
 
 void main() {
-	out_color = vec4(texture(tex1, texcoord_main).rgb * base_color, 1);
+	out_color = vec4(texture(tex1, texcoord_main).rgb, 1);
 	out_normal = vec4(normalize(normal), 1);
 }"]
 	struct Dummy;

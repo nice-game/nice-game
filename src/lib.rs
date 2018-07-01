@@ -1,3 +1,4 @@
+extern crate atom;
 extern crate byteorder;
 extern crate cgmath;
 extern crate futures;

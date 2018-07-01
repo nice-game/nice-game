@@ -4,7 +4,12 @@ use std::{ cmp::min, sync::Mutex };
 
 lazy_static! {
 	static ref CPU_POOL: Mutex<CpuPool> = Mutex::new(CpuPool::new(min(1, num_cpus::get() - 1)));
+	static ref EXECUTOR_POOL: Mutex<ThreadPool> = Mutex::new(ThreadPool::builder().pool_size(1).create().unwrap());
 	static ref FS_POOL: Mutex<CpuPool> = Mutex::new(CpuPool::new(1));
+}
+
+pub fn execute_future(future: impl Future<Item = (), Error = Never> + Send + 'static) {
+	EXECUTOR_POOL.lock().unwrap().spawn(Box::new(future)).unwrap();
 }
 
 pub fn spawn_cpu<T, E>(func: impl FnOnce(&mut task::Context) -> Result<T, E> + Send + 'static) -> CpuFuture<T, E>
