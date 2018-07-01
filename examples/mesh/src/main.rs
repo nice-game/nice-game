@@ -45,10 +45,10 @@ fn main() {
 		block_on(
 			Mesh::from_file(
 				&window,
-				&mesh_batch_shared,
+				mesh_batch_shared.clone(),
+				"examples/assets/de_rebelzone/de_rebelzone.nmd",
 				vec3(0.0, 0.0, 3.0),
 				Quaternion::one(),
-				"examples/assets/de_rebelzone/de_rebelzone.nmd"
 			)
 		).unwrap();
 
