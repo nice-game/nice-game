@@ -5,6 +5,7 @@ use std::{ fs::File, io::{ self, prelude::* }, path::Path, sync::Arc };
 use texture::Texture;
 use vulkano::{
 	OomError,
+	device::Queue,
 	format::Format,
 	image::{ Dimensions, ImageCreationError, ImageViewAccess, ImmutableImage },
 	memory::DeviceMemoryAllocError,
@@ -13,13 +14,24 @@ use vulkano::{
 use window::Window;
 
 pub struct ImmutableTexture {
-	image: Arc<ImageViewAccess + Send + Sync + 'static>,
+	pub(crate) image: Arc<ImageViewAccess + Send + Sync + 'static>,
 }
 impl ImmutableTexture {
-	pub fn from_file_with_format<P>(window: &Window, path: P, format: ImageFormat) -> impl Future<Item = (ImmutableTexture, impl GpuFuture), Error = TextureError>
+	pub fn from_file_with_format<P>(
+		window: &Window,
+		path: P,
+		format: ImageFormat
+	) -> impl Future<Item = (ImmutableTexture, impl GpuFuture), Error = TextureError>
 	where P: AsRef<Path> + Send + 'static {
-		let queue = window.queue().clone();
+		Self::from_file_with_format_impl(window.queue().clone(), path, format)
+	}
 
+	pub(crate) fn from_file_with_format_impl<P>(
+		queue: Arc<Queue>,
+		path: P,
+		format: ImageFormat
+	) -> impl Future<Item = (ImmutableTexture, impl GpuFuture), Error = TextureError>
+	where P: AsRef<Path> + Send + 'static {
 		spawn_fs(|_| {
 			let mut bytes = vec![];
 			File::open(path)?.read_to_end(&mut bytes)?;
