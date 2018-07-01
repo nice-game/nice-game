@@ -111,7 +111,7 @@ layout(location = 2) in vec2 texcoord_main;
 
 layout(location = 0) out vec3 out_normal;
 layout(location = 1) out vec2 out_texcoord_main;
-layout(location = 2) out vec3 out_base_color;
+layout(location = 2) out vec3 out_base_albedo;
 
 layout(set = 0, binding = 0) uniform CameraPos { vec3 camera_pos; };
 layout(set = 0, binding = 1) uniform CameraRot { vec4 camera_rot; };
@@ -124,7 +124,7 @@ layout(set = 2, binding = 0) uniform Material {
 	uint light_penetration;
 	uint subsurface_scattering;
 	uint emissive_brightness;
-	vec3 base_color;
+	vec3 base_albedo;
 };
 layout(set = 2, binding = 1) uniform sampler2D tex1;
 
@@ -147,7 +147,7 @@ void main() {
 
 	out_normal = quat_mul(quat_inv(camera_rot), normal);
 	out_texcoord_main = texcoord_main;
-	out_base_color = base_color;
+	out_base_albedo = base_albedo;
 	gl_Position = perspective(camera_proj, quat_mul(quat_inv(camera_rot), quat_mul(mesh_rot, position) + mesh_pos - camera_pos));
 }"]
 	struct Dummy;
@@ -160,9 +160,9 @@ mod fs_gbuffers {
 	#[src = "#version 450
 layout(location = 0) in vec3 normal;
 layout(location = 1) in vec2 texcoord_main;
-layout(location = 2) in vec3 base_color;
+layout(location = 2) in vec3 base_albedo;
 
-layout(location = 0) out vec4 out_color;
+layout(location = 0) out vec4 out_albedo;
 layout(location = 1) out vec4 out_normal;
 
 layout(set = 2, binding = 1) uniform sampler2D tex1;
@@ -172,7 +172,9 @@ float softSq(float x, float y) {
 }
 
 void main() {
-	out_color = vec4(texture(tex1, texcoord_main).rgb, 1);
+	vec3 albedo = texture(tex1, texcoord_main).rgb;
+	//albedo = mix(base_albedo, albedo, albedo.a), 1);
+	out_albedo = vec4(sqrt(albedo), 0);
 	out_normal = vec4(normalize(normal), 1);
 }"]
 	struct Dummy;
@@ -200,7 +202,7 @@ mod fs_target {
 layout(location = 0) out vec4 out_color;
 
 layout(set = 0, binding = 0) uniform Resolution { vec4 resolution; };
-layout(set = 0, binding = 1, input_attachment_index = 0) uniform subpassInput color;
+layout(set = 0, binding = 1, input_attachment_index = 0) uniform subpassInput albedo;
 layout(set = 0, binding = 2, input_attachment_index = 1) uniform subpassInput normal;
 layout(set = 0, binding = 3, input_attachment_index = 2) uniform subpassInput depth;
 layout(set = 1, binding = 0) uniform CameraPos { vec3 camera_pos; };
@@ -222,28 +224,31 @@ void main() {
 	vec3 g_normal_cs = subpassLoad(normal).xyz;
 	vec3 g_normal_ws = quat_mul(camera_rot, g_normal_cs);
 
-	vec3 g_color = subpassLoad(color).rgb;
+	vec3 g_albedo = subpassLoad(albedo).rgb;
+	g_albedo *= g_albedo;
 
 	vec3 light = vec3(0);
 
 	// sunlight
-	vec3 sunColor = vec3(1.0, 0.85, 0.7) * 0.0;
+	vec3 sunColor = vec3(1.0, 0.85, 0.7) * 0.5;
 	vec3 sunDir = normalize(vec3(-1, -4, 2));
-	light += sunColor * max(0, dot(g_normal_cs, sunDir));
+	light += sunColor * max(0, dot(g_normal_ws, sunDir));
 
 	// point light
-	vec3 lightColor = vec3(0.7, 0.85, 1.0) * 100.0;
-	vec3 lightPos = vec3(14.5, -5.5, -34.5);
+	float lightRadius = 5.0;
+	vec3 lightColor = vec3(0.7, 0.85, 1.0) * sqrt(lightRadius);
+	vec3 lightPos = vec3(14.5, -11, -28.5);
 	float lightDistance = distance(lightPos, g_position_ws);
 	vec3 lightDir = normalize(lightPos - g_position_ws);
-	light += lightColor * max(0, dot(g_normal_ws, lightDir)) / (lightDistance * lightDistance);
+	float lightIntensity = max(0, dot(g_normal_ws, lightDir));
+	lightIntensity *= sqrt(max(0, (lightRadius - lightDistance) / lightRadius));
+	light += lightColor * lightIntensity / (lightDistance * lightDistance);
 
 	// ambient
-	light = max(light, 0.025);
+	light = max(light, 0.001);
 
-	float exposure = 1.0;
-
-	vec3 out_hdr = g_color * light * exposure;
+	float exposure = 1.618;
+	vec3 out_hdr = g_albedo * light * exposure;
 	vec3 out_tonemapped = out_hdr / (1 + out_hdr);
 	out_color = vec4(out_tonemapped, 1);
 }
