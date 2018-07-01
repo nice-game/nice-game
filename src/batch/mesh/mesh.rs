@@ -2,7 +2,7 @@ use atom::Atom;
 use batch::mesh::MeshBatchShared;
 use byteorder::{LE, ReadBytesExt};
 use cgmath::{ Quaternion, Vector3 };
-use cpu_pool::{ execute_future, spawn_fs };
+use cpu_pool::{ execute_future, spawn_fs, GpuFutureFuture };
 use futures::prelude::*;
 use std::{
 	fs::File,
@@ -234,7 +234,13 @@ impl Mesh {
 
 					let future = ImmutableTexture
 						::from_file_with_format_impl(queue.clone(), path.clone(), ImageFormat::TGA)
-						.and_then(move |(tex, _)| {
+						.map_err(|err| error!("{:?}", err))
+						.and_then(|(tex, future)| {
+							GpuFutureFuture::new(future)
+								.map(|_| tex)
+								.map_err(|err| error!("{:?}", err))
+						})
+						.and_then(move |tex| {
 							desc
 								.swap(Box::new(Arc::new(
 									PersistentDescriptorSet::start(pipeline_gbuffers.clone(), 2)
@@ -270,7 +276,13 @@ impl Mesh {
 
 					let future = ImmutableTexture
 						::from_file_with_format_impl(queue.clone(), path.clone(), ImageFormat::TGA)
-						.and_then(move |(tex, _)| {
+						.map_err(|err| error!("{:?}", err))
+						.and_then(|(tex, future)| {
+							GpuFutureFuture::new(future)
+								.map(|_| tex)
+								.map_err(|err| error!("{:?}", err))
+						})
+						.and_then(move |tex| {
 							desc
 								.swap(Box::new(Arc::new(
 									PersistentDescriptorSet::start(pipeline_gbuffers.clone(), 2)

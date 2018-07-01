@@ -1,6 +1,7 @@
 use futures::{ channel::oneshot, executor::ThreadPool, future::{ lazy, ok }, prelude::* };
 use num_cpus;
 use std::{ cmp::min, sync::Mutex };
+use vulkano::sync::{ FenceSignalFuture, FlushError, GpuFuture };
 
 lazy_static! {
 	static ref CPU_POOL: Mutex<CpuPool> = Mutex::new(CpuPool::new(min(1, num_cpus::get() - 1)));
@@ -68,6 +69,27 @@ impl<T, E> Future for CpuFuture<T, E> {
 			},
 			Ok(Async::Pending) => Ok(Async::Pending),
 			Err(_) => unreachable!(),
+		}
+	}
+}
+
+pub struct GpuFutureFuture<T: GpuFuture> {
+	future: FenceSignalFuture<T>
+}
+impl<T: GpuFuture> GpuFutureFuture<T> {
+	pub fn new(future: T) -> Result<Self, FlushError> {
+		Ok(Self { future: future.then_signal_fence_and_flush()? })
+	}
+}
+impl<T: GpuFuture> Future for GpuFutureFuture<T> {
+	type Item = ();
+	type Error = FlushError;
+
+	fn poll(&mut self, _: &mut task::Context) -> Poll<Self::Item, Self::Error> {
+		match self.future.wait(Some(Default::default())) {
+			Ok(()) => Ok(Async::Ready(())),
+			Err(FlushError::Timeout) => Ok(Async::Pending),
+			Err(err) => Err(err),
 		}
 	}
 }
