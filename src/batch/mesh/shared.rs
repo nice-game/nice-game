@@ -1,4 +1,4 @@
-use batch::mesh::{ NORMAL_FORMAT, DEPTH_FORMAT, MeshBatchShaders, TargetVertex, mesh::MeshVertexDefinition };
+use batch::mesh::{ ALBEDO_FORMAT, NORMAL_FORMAT, DEPTH_FORMAT, MeshBatchShaders, TargetVertex, mesh::MeshVertexDefinition };
 use std::sync::Arc;
 use vulkano::{
 	format::Format,
@@ -20,7 +20,7 @@ impl MeshBatchShared {
 				ordered_passes_renderpass!(
 					shaders.target_vertices.device().clone(),
 					attachments: {
-						color: { load: Clear, store: Store, format: format, samples: 1, },
+						color: { load: Clear, store: Store, format: ALBEDO_FORMAT, samples: 1, },
 						normal: { load: Clear, store: Store, format: NORMAL_FORMAT, samples: 1, },
 						depth: { load: Clear, store: Store, format: DEPTH_FORMAT, samples: 1, },
 						out: { load: Clear, store: Store, format: format, samples: 1, }
