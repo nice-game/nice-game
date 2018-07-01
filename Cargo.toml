@@ -7,9 +7,10 @@ authors = ["IcyDefiance <icydefiance@gmail.com>"]
 lto = true
 
 [dependencies]
+atom = "0.3"
 byteorder = "1.2"
 cgmath = { version = "0.16", features = ["swizzle"] }
-futures = "0.2"
+futures-preview = "0.2"
 image = "0.19"
 lazy_static = "1.0"
 log = "0.4"

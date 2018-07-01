@@ -1,7 +1,8 @@
+use atom::Atom;
 use batch::mesh::MeshBatchShared;
 use byteorder::{LE, ReadBytesExt};
 use cgmath::{ Quaternion, Vector3 };
-use cpu_pool::{ spawn_fs, CpuFuture };
+use cpu_pool::{ execute_future, spawn_fs, GpuFutureFuture };
 use futures::prelude::*;
 use std::{
 	fs::File,
@@ -11,6 +12,7 @@ use std::{
 	sync::Arc,
 	vec::IntoIter as VecIntoIter,
 };
+use texture::{ ImageFormat, ImmutableTexture };
 use vulkano::{
 	OomError,
 	buffer::{
@@ -26,6 +28,7 @@ use vulkano::{
 	descriptor::{ DescriptorSet, descriptor_set::{ FixedSizeDescriptorSetsPool, PersistentDescriptorSet } },
 	device::Queue,
 	format::Format,
+	image::ImageViewAccess,
 	instance::QueueFamily,
 	memory::{ DeviceMemoryAllocError, pool::StdMemoryPool },
 	pipeline::{
@@ -45,8 +48,8 @@ pub struct Mesh {
 	positions: Arc<ImmutableBuffer<[[f32; 3]]>>,
 	normals: Arc<ImmutableBuffer<[[f32; 3]]>>,
 	texcoords_main: Arc<ImmutableBuffer<[[f32; 2]]>>,
+	material_buf: Arc<ImmutableBuffer<[u8]>>,
 	materials: Vec<Material>,
-	material_descs: Vec<Arc<DescriptorSet + Send + Sync + 'static>>,
 }
 impl Mesh {
 	pub fn from_file<P>(
@@ -56,14 +59,16 @@ impl Mesh {
 		rotation: Quaternion<f32>,
 		path: P
 	) -> impl Future<Item = (Mesh, impl GpuFuture + Send + Sync + 'static), Error = MeshFromFileError>
-	where P: AsRef<Path> + Send + 'static
+	where P: AsRef<Path> + Clone + Send + 'static
 	{
 		let device = window.device().clone();
-		let queue = window.queue().clone();
 		let pipeline_gbuffers = shared.pipeline_gbuffers.clone();
+		let queue = window.queue().clone();
+		let sampler = shared.shaders.sampler.clone();
+		let white_pixel = shared.shaders.white_pixel.clone();
 
 		spawn_fs(move |_| {
-			let mut file = File::open(path)?;
+			let mut file = File::open(path.clone())?;
 
 			let mut magic_number = [0; 4];
 			file.read_exact(&mut magic_number)?;
@@ -136,7 +141,6 @@ impl Mesh {
 			material_stride = (size_of::<MaterialGpu>() + material_stride - 1) / material_stride * material_stride;
 			debug!("material stride: {}", material_stride);
 
-			let mut materials = Vec::with_capacity(material_count);
 			let material_buf =
 				unsafe {
 					CpuAccessibleBuffer::uninitialized_array(
@@ -145,26 +149,18 @@ impl Mesh {
 						BufferUsage::transfer_source()
 					)?
 				};
+			let mut index_counts = Vec::with_capacity(material_count);
+			let mut mat_temp_datas = Vec::with_capacity(material_count);
 			{
 				let mut material_buf_lock = material_buf.write().unwrap();
-				let mut index_start = 0;
 				for i in 0..material_count {
-					let index_count = file.read_u32::<LE>()? as usize;
-
-					materials
-						.push(Material {
-							indices:
-								indices.clone().into_buffer_slice().slice(index_start..index_start + index_count).unwrap(),
-							texture1: {
-								// skip texture for now
-								file.seek(SeekFrom::Current(6))?;
-								None
-							},
-							texture2: {
-								// skip texture for now
-								file.seek(SeekFrom::Current(6))?;
-								None
-							},
+					index_counts.push(file.read_u32::<LE>()?);
+					mat_temp_datas
+						.push(MaterialTextureInfo {
+							texture1_name_size: file.read_u16::<LE>()?,
+							texture1_name_offset: file.read_u32::<LE>()?,
+							texture2_name_size: file.read_u16::<LE>()?,
+							texture2_name_offset: file.read_u32::<LE>()?,
 						});
 
 					material_buf_lock[i * material_stride..i * material_stride + size_of::<MaterialGpu>()]
@@ -188,30 +184,126 @@ impl Mesh {
 								)
 							}
 						);
-
-					index_start += index_count;
 				}
 			}
 
 			let (material_buf, material_buf_future) =
-				ImmutableBuffer::from_buffer(material_buf, BufferUsage::uniform_buffer(), queue)?;
-			let material_descs = (0..material_count)
-				.map(|i| {
-					let material_offset = material_stride * i;
-					Arc::new(
-						PersistentDescriptorSet::start(pipeline_gbuffers.clone(), 2)
-							.add_buffer(
-								material_buf.clone()
-									.into_buffer_slice()
-									.slice(material_offset..material_offset + size_of::<MaterialGpu>())
+				ImmutableBuffer::from_buffer(material_buf, BufferUsage::uniform_buffer(), queue.clone())?;
+
+			let mut materials = Vec::with_capacity(material_count);
+			let mut index_start = 0;
+			for (i, index_count) in index_counts.into_iter().enumerate() {
+				let index_count = index_count as usize;
+				let material_offset = material_stride * i;
+				materials
+					.push(Material {
+						indices:
+							indices.clone().into_buffer_slice().slice(index_start..index_start + index_count).unwrap(),
+						desc:
+							Arc::new(Atom::new(Box::new(Arc::new(
+								PersistentDescriptorSet::start(pipeline_gbuffers.clone(), 2)
+									.add_buffer(
+										material_buf.clone()
+											.into_buffer_slice()
+											.slice(material_offset..material_offset + size_of::<MaterialGpu>())
+											.unwrap()
+									)
 									.unwrap()
-							)
-							.unwrap()
-							.build()
-							.unwrap()
-					) as _
-				})
-				.collect();
+									.add_sampled_image(white_pixel.clone(), sampler.clone())
+									.unwrap()
+									.build()
+									.unwrap()
+							))))
+					});
+
+				index_start += index_count;
+			}
+
+			for (i, data) in mat_temp_datas.into_iter().enumerate() {
+				if data.texture1_name_size != 0 {
+					file.seek(SeekFrom::Start(data.texture1_name_offset as u64))?;
+					let mut buf = vec![0; data.texture1_name_size as usize];
+					file.read_exact(&mut buf)?;
+					let path = path.as_ref().parent().unwrap().join(String::from_utf8(buf).unwrap());
+
+					let desc = materials[i].desc.clone();
+					let material_buf = material_buf.clone();
+					let material_offset = material_stride * i;
+					let pipeline_gbuffers = pipeline_gbuffers.clone();
+					let sampler = sampler.clone();
+
+					let future = ImmutableTexture
+						::from_file_with_format_impl(queue.clone(), path.clone(), ImageFormat::TGA)
+						.map_err(|err| error!("{:?}", err))
+						.and_then(|(tex, future)| {
+							GpuFutureFuture::new(future)
+								.map(|_| tex)
+								.map_err(|err| error!("{:?}", err))
+						})
+						.and_then(move |tex| {
+							desc
+								.swap(Box::new(Arc::new(
+									PersistentDescriptorSet::start(pipeline_gbuffers.clone(), 2)
+										.add_buffer(
+											material_buf.clone()
+												.into_buffer_slice()
+												.slice(material_offset..material_offset + size_of::<MaterialGpu>())
+												.unwrap()
+										)
+										.unwrap()
+										.add_sampled_image(tex.image, sampler.clone())
+										.unwrap()
+										.build()
+										.unwrap()
+								)));
+							Ok(())
+						})
+						.or_else::<Result<_, Never>, _>(move |err| { error!("{:?}: {:?}", path, err); Ok(()) });
+					execute_future(future);
+				}
+
+				if data.texture2_name_size != 0 {
+					file.seek(SeekFrom::Start(data.texture2_name_offset as u64))?;
+					let mut buf = vec![0; data.texture2_name_size as usize];
+					file.read_exact(&mut buf)?;
+					let path = path.as_ref().parent().unwrap().join(String::from_utf8(buf).unwrap());
+
+					let desc = materials[i].desc.clone();
+					let material_buf = material_buf.clone();
+					let material_offset = material_stride * i;
+					let pipeline_gbuffers = pipeline_gbuffers.clone();
+					let sampler = sampler.clone();
+
+					let future = ImmutableTexture
+						::from_file_with_format_impl(queue.clone(), path.clone(), ImageFormat::TGA)
+						.map_err(|err| error!("{:?}", err))
+						.and_then(|(tex, future)| {
+							GpuFutureFuture::new(future)
+								.map(|_| tex)
+								.map_err(|err| error!("{:?}", err))
+						})
+						.and_then(move |tex| {
+							desc
+								.swap(Box::new(Arc::new(
+									PersistentDescriptorSet::start(pipeline_gbuffers.clone(), 2)
+										.add_buffer(
+											material_buf.clone()
+												.into_buffer_slice()
+												.slice(material_offset..material_offset + size_of::<MaterialGpu>())
+												.unwrap()
+										)
+										.unwrap()
+										.add_sampled_image(tex.image, sampler.clone())
+										.unwrap()
+										.build()
+										.unwrap()
+								)));
+							Ok(())
+						})
+						.or_else::<Result<_, Never>, _>(move |err| { error!("{:?}: {:?}", path, err); Ok(()) });
+					execute_future(future);
+				}
+			}
 
 			let position_pool = CpuBufferPool::uniform_buffer(device.clone());
 			let rotation_pool = CpuBufferPool::uniform_buffer(device);
@@ -227,8 +319,8 @@ impl Mesh {
 					positions: positions,
 					normals: normals,
 					texcoords_main: texcoords_main,
+					material_buf: material_buf,
 					materials: materials,
-					material_descs: material_descs,
 				},
 				positions_future
 					.join(normals_future)
@@ -264,7 +356,9 @@ impl Mesh {
 				shared.subpass_gbuffers.clone()
 			)?;
 
-		for (i, mat) in self.materials.iter().enumerate() {
+		for mat in &self.materials {
+			let desc = mat.desc.take().unwrap();
+
 			cmd = cmd
 				.draw_indexed(
 					shared.pipeline_gbuffers.clone(),
@@ -285,11 +379,13 @@ impl Mesh {
 							.unwrap()
 							.build()
 							.unwrap(),
-						self.material_descs[i].clone()
+						desc.clone()
 					),
 					()
 				)
 				.unwrap();
+
+			mat.desc.set_if_none(desc);
 		}
 
 		Ok(cmd.build().map_err(|err| match err { BuildError::OomError(err) => err, err => unreachable!("{}", err) })?)
@@ -376,8 +472,14 @@ impl From<DeviceMemoryAllocError> for MeshFromFileError{
 
 struct Material {
 	indices: BufferSlice<[u32], Arc<ImmutableBuffer<[u32]>>>,
-	texture1: Option<PathBuf>,
-	texture2: Option<PathBuf>,
+	desc: Arc<Atom<Box<Arc<DescriptorSet + Sync + Send + 'static>>>>,
+}
+
+struct MaterialTextureInfo {
+	texture1_name_size: u16,
+	texture1_name_offset: u32,
+	texture2_name_size: u16,
+	texture2_name_offset: u32,
 }
 
 #[repr(C)]

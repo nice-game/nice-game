@@ -4,7 +4,10 @@ use vulkano::{
 	OomError,
 	buffer::{ BufferUsage, ImmutableBuffer },
 	device::Queue,
+	format::Format,
+	image::{ Dimensions, ImageCreationError, ImageViewAccess, ImmutableImage },
 	memory::DeviceMemoryAllocError,
+	sampler::{ Filter, MipmapMode, Sampler, SamplerAddressMode, SamplerCreationError },
 	sync::GpuFuture,
 };
 use window::Window;
@@ -16,10 +19,12 @@ pub struct MeshBatchShaders {
 	pub(super) shader_gbuffers_fragment: fs_gbuffers::Shader,
 	pub(super) shader_target_vertex: vs_target::Shader,
 	pub(super) shader_target_fragment: fs_target::Shader,
+	pub(super) white_pixel: Arc<ImageViewAccess + Send + Sync + 'static>,
+	pub(super) sampler: Arc<Sampler>,
 }
 impl MeshBatchShaders {
 	pub fn new(window: &Window) -> Result<(Arc<Self>, impl GpuFuture), MeshBatchShadersError> {
-		let (target_vertices, future) =
+		let (target_vertices, target_vertices_future) =
 			ImmutableBuffer::from_data(
 				[
 					TargetVertex { position: [0.0, 0.0] },
@@ -33,6 +38,14 @@ impl MeshBatchShaders {
 				window.queue().clone(),
 			)?;
 
+		let (white_pixel, white_pixel_future) =
+				ImmutableImage::from_iter(
+					vec![(255u8, 255u8, 255u8, 0u8)].into_iter(),
+					Dimensions::Dim2d { width: 1, height: 1 },
+					Format::R8G8B8A8Srgb,
+					window.queue().clone(),
+				)?;
+
 		Ok((
 			Arc::new(Self {
 				queue: window.queue().clone(),
@@ -41,8 +54,19 @@ impl MeshBatchShaders {
 				shader_gbuffers_fragment: fs_gbuffers::Shader::load(window.device().clone())?,
 				shader_target_vertex: vs_target::Shader::load(window.device().clone())?,
 				shader_target_fragment: fs_target::Shader::load(window.device().clone())?,
+				white_pixel: white_pixel,
+				sampler:
+					Sampler::new(
+						window.device().clone(),
+						Filter::Linear,
+						Filter::Linear, MipmapMode::Nearest,
+						SamplerAddressMode::Repeat,
+						SamplerAddressMode::Repeat,
+						SamplerAddressMode::Repeat,
+						0.0, 1.0, 0.0, 0.0
+					)?,
 			}),
-			future
+			target_vertices_future.join(white_pixel_future)
 		))
 	}
 }
@@ -50,7 +74,9 @@ impl MeshBatchShaders {
 #[derive(Debug)]
 pub enum MeshBatchShadersError {
 	DeviceMemoryAllocError(DeviceMemoryAllocError),
+	ImageCreationError(ImageCreationError),
 	OomError(OomError),
+	SamplerCreationError(SamplerCreationError),
 	TooManyObjects,
 }
 impl From<DeviceMemoryAllocError> for MeshBatchShadersError {
@@ -58,9 +84,19 @@ impl From<DeviceMemoryAllocError> for MeshBatchShadersError {
 		MeshBatchShadersError::DeviceMemoryAllocError(val)
 	}
 }
+impl From<ImageCreationError> for MeshBatchShadersError {
+	fn from(val: ImageCreationError) -> Self {
+		MeshBatchShadersError::ImageCreationError(val)
+	}
+}
 impl From<OomError> for MeshBatchShadersError {
 	fn from(val: OomError) -> Self {
 		MeshBatchShadersError::OomError(val)
+	}
+}
+impl From<SamplerCreationError> for MeshBatchShadersError {
+	fn from(val: SamplerCreationError) -> Self {
+		MeshBatchShadersError::SamplerCreationError(val)
 	}
 }
 
@@ -90,6 +126,7 @@ layout(set = 2, binding = 0) uniform Material {
 	uint emissive_brightness;
 	vec3 base_albedo;
 };
+layout(set = 2, binding = 1) uniform sampler2D tex1;
 
 vec4 quat_inv(vec4 quat) {
 	return vec4(-quat.xyz, quat.w) / dot(quat, quat);
@@ -128,14 +165,14 @@ layout(location = 2) in vec3 base_albedo;
 layout(location = 0) out vec4 out_albedo;
 layout(location = 1) out vec4 out_normal;
 
+layout(set = 2, binding = 1) uniform sampler2D tex1;
+
 float softSq(float x, float y) {
 	return tanh(sin(x * 6.283185307179586 * 4.0) * y);
 }
 
 void main() {
-	float sharp = 2.5;
-	float wave = (softSq(texcoord_main.x, sharp) * softSq(texcoord_main.y, sharp)) * 0.5 + 0.5;
-	vec3 albedo = vec3(wave);
+	vec3 albedo = texture(tex1, texcoord_main).rgb;
 	//albedo = mix(base_albedo, albedo, albedo.a), 1);
 	out_albedo = vec4(sqrt(albedo), 0);
 	out_normal = vec4(normalize(normal), 1);

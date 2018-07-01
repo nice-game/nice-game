@@ -1,26 +1,37 @@
-use cpu_pool::{ spawn_cpu, spawn_fs, CpuFuture };
+use cpu_pool::{ spawn_cpu, spawn_fs };
 use futures::prelude::*;
 use image::{ self, ImageError, ImageFormat };
 use std::{ fs::File, io::{ self, prelude::* }, path::Path, sync::Arc };
 use texture::Texture;
 use vulkano::{
 	OomError,
-	command_buffer::{ AutoCommandBuffer, CommandBufferExecFuture },
-	format::R8G8B8A8Srgb,
+	device::Queue,
+	format::Format,
 	image::{ Dimensions, ImageCreationError, ImageViewAccess, ImmutableImage },
 	memory::DeviceMemoryAllocError,
-	sync::{ FenceSignalFuture, FlushError, GpuFuture, NowFuture },
+	sync::{ FlushError, GpuFuture },
 };
 use window::Window;
 
 pub struct ImmutableTexture {
-	image: Arc<ImageViewAccess + Send + Sync + 'static>,
+	pub(crate) image: Arc<ImageViewAccess + Send + Sync + 'static>,
 }
 impl ImmutableTexture {
-	pub fn from_file_with_format<P>(window: &Window, path: P, format: ImageFormat) -> impl Future<Item = (ImmutableTexture, impl GpuFuture), Error = TextureError>
+	pub fn from_file_with_format<P>(
+		window: &Window,
+		path: P,
+		format: ImageFormat
+	) -> impl Future<Item = (ImmutableTexture, impl GpuFuture), Error = TextureError>
 	where P: AsRef<Path> + Send + 'static {
-		let queue = window.queue().clone();
+		Self::from_file_with_format_impl(window.queue().clone(), path, format)
+	}
 
+	pub(crate) fn from_file_with_format_impl<P>(
+		queue: Arc<Queue>,
+		path: P,
+		format: ImageFormat
+	) -> impl Future<Item = (ImmutableTexture, impl GpuFuture), Error = TextureError>
+	where P: AsRef<Path> + Send + 'static {
 		spawn_fs(|_| {
 			let mut bytes = vec![];
 			File::open(path)?.read_to_end(&mut bytes)?;
@@ -35,7 +46,7 @@ impl ImmutableTexture {
 					ImmutableImage::from_iter(
 						img.into_iter(),
 						Dimensions::Dim2d { width: width, height: height },
-						R8G8B8A8Srgb,
+						Format::R8G8B8A8Srgb,
 						queue,
 					)?;
 
@@ -82,15 +93,4 @@ impl From<io::Error> for TextureError {
 	fn from(val: io::Error) -> Self {
 		TextureError::IoError(val)
 	}
-}
-
-enum SpriteState {
-	LoadingDisk(CpuFuture<CpuFuture<SpriteGpuData, TextureError>, io::Error>),
-	LoadingCpu(CpuFuture<SpriteGpuData, TextureError>),
-	LoadingGpu(SpriteGpuData),
-}
-
-struct SpriteGpuData {
-	image: Arc<ImmutableImage<R8G8B8A8Srgb>>,
-	future: FenceSignalFuture<CommandBufferExecFuture<NowFuture, AutoCommandBuffer>>,
 }
