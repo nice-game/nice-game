@@ -46,9 +46,9 @@ fn main() {
 			Mesh::from_file(
 				&window,
 				mesh_batch_shared.clone(),
-				"examples/assets/de_rebelzone/de_rebelzone.nmd",
-				vec3(0.0, 0.0, 3.0),
-				Quaternion::one(),
+				"examples/assets/p250/p250.nmd",
+				vec3(0.0, 0.0, -0.5),
+				Quaternion::one() * Quaternion::from_angle_y(Rad(PI / 2.0)),
 			)
 		).unwrap();
 
@@ -144,12 +144,12 @@ fn main() {
 
 		let yaw = Quaternion::from_angle_y(Rad(-character.rotation.x * PI / 2.0));
 
-		if controls_active && w_down { character.position += yaw.rotate_vector(vec3(0.0, 0.0, -0.5)); }
-		if controls_active && a_down { character.position += yaw.rotate_vector(vec3(-0.5, 0.0, 0.0)); }
-		if controls_active && s_down { character.position += yaw.rotate_vector(vec3(0.0, 0.0, 0.5)); }
-		if controls_active && d_down { character.position += yaw.rotate_vector(vec3(0.5, 0.0, 0.0)); }
-		if controls_active && space_down { character.position.y -= 0.5; }
-		if controls_active && shift_down { character.position.y += 0.5; }
+		if controls_active && w_down { character.position += yaw.rotate_vector(vec3(0.0, 0.0, -0.1)); }
+		if controls_active && a_down { character.position += yaw.rotate_vector(vec3(-0.1, 0.0, 0.0)); }
+		if controls_active && s_down { character.position += yaw.rotate_vector(vec3(0.0, 0.0, 0.1)); }
+		if controls_active && d_down { character.position += yaw.rotate_vector(vec3(0.1, 0.0, 0.0)); }
+		if controls_active && space_down { character.position.y -= 0.1; }
+		if controls_active && shift_down { character.position.y += 0.1; }
 
 		camera.set_position(character.position).unwrap();
 		camera.set_rotation(yaw * Quaternion::from_angle_x(Rad(character.rotation.y * PI / 2.0))).unwrap();
@@ -174,6 +174,6 @@ struct Character {
 }
 impl Character {
 	fn new() -> Self {
-		Self { position: vec3(22.0, 10.0, -26.0), rotation: vec2(-1.5, 0.0) }
+		Self { position: vec3(0.0, 0.0, 0.0), rotation: vec2(0.0, 0.0) }
 	}
 }

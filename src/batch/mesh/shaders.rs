@@ -19,7 +19,8 @@ pub struct MeshBatchShaders {
 	pub(super) shader_gbuffers_fragment: fs_gbuffers::Shader,
 	pub(super) shader_target_vertex: vs_target::Shader,
 	pub(super) shader_target_fragment: fs_target::Shader,
-	pub(super) white_pixel: Arc<ImageViewAccess + Send + Sync + 'static>,
+	pub(super) texture1_default: Arc<ImageViewAccess + Send + Sync + 'static>,
+	pub(super) texture2_default: Arc<ImageViewAccess + Send + Sync + 'static>,
 	pub(super) sampler: Arc<Sampler>,
 }
 impl MeshBatchShaders {
@@ -38,9 +39,17 @@ impl MeshBatchShaders {
 				window.queue().clone(),
 			)?;
 
-		let (white_pixel, white_pixel_future) =
+		let (texture1_default, texture1_default_future) =
 				ImmutableImage::from_iter(
 					vec![(255u8, 255u8, 255u8, 0u8)].into_iter(),
+					Dimensions::Dim2d { width: 1, height: 1 },
+					Format::R8G8B8A8Srgb,
+					window.queue().clone(),
+				)?;
+
+		let (texture2_default, texture2_default_future) =
+				ImmutableImage::from_iter(
+					vec![(128u8, 128u8, 0u8, 0u8)].into_iter(),
 					Dimensions::Dim2d { width: 1, height: 1 },
 					Format::R8G8B8A8Srgb,
 					window.queue().clone(),
@@ -54,7 +63,8 @@ impl MeshBatchShaders {
 				shader_gbuffers_fragment: fs_gbuffers::Shader::load(window.device().clone())?,
 				shader_target_vertex: vs_target::Shader::load(window.device().clone())?,
 				shader_target_fragment: fs_target::Shader::load(window.device().clone())?,
-				white_pixel: white_pixel,
+				texture1_default: texture1_default,
+				texture2_default: texture2_default,
 				sampler:
 					Sampler::new(
 						window.device().clone(),
@@ -66,7 +76,7 @@ impl MeshBatchShaders {
 						0.0, 1.0, 0.0, 0.0
 					)?,
 			}),
-			target_vertices_future.join(white_pixel_future)
+			target_vertices_future.join(texture1_default_future).join(texture2_default_future)
 		))
 	}
 }
@@ -127,6 +137,7 @@ layout(set = 2, binding = 0) uniform Material {
 	vec3 base_albedo;
 };
 layout(set = 2, binding = 1) uniform sampler2D tex1;
+layout(set = 2, binding = 2) uniform sampler2D tex2;
 
 vec4 quat_inv(vec4 quat) {
 	return vec4(-quat.xyz, quat.w) / dot(quat, quat);
@@ -166,13 +177,14 @@ layout(location = 0) out vec4 out_albedo;
 layout(location = 1) out vec4 out_normal;
 
 layout(set = 2, binding = 1) uniform sampler2D tex1;
+layout(set = 2, binding = 2) uniform sampler2D tex2;
 
 float softSq(float x, float y) {
 	return tanh(sin(x * 6.283185307179586 * 4.0) * y);
 }
 
 void main() {
-	vec3 albedo = texture(tex1, texcoord_main).rgb;
+	vec3 albedo = texture(tex2, texcoord_main).rgb;
 	//albedo = mix(base_albedo, albedo, albedo.a), 1);
 	out_albedo = vec4(sqrt(albedo), 0);
 	out_normal = vec4(normalize(normal), 1);

@@ -3,7 +3,7 @@ use batch::mesh::{ MeshBatchShared, mesh::{ Material, MaterialTextureInfo, Mater
 use byteorder::{LE, ReadBytesExt};
 use cgmath::{ Quaternion, Vector3 };
 use cpu_pool::{ execute_future, GpuFutureFuture };
-use futures::prelude::*;
+use futures::{ future::ok, prelude::* };
 use std::{ fs::File, io::{ self, prelude::*, SeekFrom }, mem::{ size_of, transmute }, path::{ Path }, sync::Arc };
 use texture::{ ImageFormat, ImmutableTexture };
 use vulkano::{
@@ -161,7 +161,9 @@ pub fn from_nice_model(
 									.unwrap()
 							)
 							.unwrap()
-							.add_sampled_image(shared.shaders.white_pixel.clone(), shared.shaders.sampler.clone())
+							.add_sampled_image(shared.shaders.texture1_default.clone(), shared.shaders.sampler.clone())
+							.unwrap()
+							.add_sampled_image(shared.shaders.texture2_default.clone(), shared.shaders.sampler.clone())
 							.unwrap()
 							.build()
 							.unwrap()
@@ -172,85 +174,80 @@ pub fn from_nice_model(
 	}
 
 	for (i, data) in mat_temp_datas.into_iter().enumerate() {
-		if data.texture1_name_size != 0 {
-			file.seek(SeekFrom::Start(data.texture1_name_offset as u64))?;
-			let mut buf = vec![0; data.texture1_name_size as usize];
-			file.read_exact(&mut buf)?;
-			let path = path.as_ref().parent().unwrap().join(String::from_utf8(buf).unwrap());
+		let texture1_default = shared.shaders.texture1_default.clone();
+		let future1: Box<Future<Item = _, Error = _> + Send> =
+			if data.texture1_name_size != 0 {
+				file.seek(SeekFrom::Start(data.texture1_name_offset as u64))?;
+				let mut buf = vec![0; data.texture1_name_size as usize];
+				file.read_exact(&mut buf)?;
+				let path = path.as_ref().parent().unwrap().join(String::from_utf8(buf).unwrap());
 
-			let desc = materials[i].desc.clone();
-			let material_buf = material_buf.clone();
-			let material_offset = material_stride * i;
-			let pipeline_gbuffers = shared.pipeline_gbuffers.clone();
-			let sampler = shared.shaders.sampler.clone();
 
-			let future = ImmutableTexture
-				::from_file_with_format_impl(queue.clone(), path.clone(), ImageFormat::TGA)
-				.map_err(|err| error!("{:?}", err))
-				.and_then(|(tex, future)| {
-					GpuFutureFuture::new(future).map(|_| tex).map_err(|err| error!("{:?}", err))
-				})
-				.and_then(move |tex| {
-					desc
-						.swap(Box::new(Arc::new(
-							PersistentDescriptorSet::start(pipeline_gbuffers.clone(), 2)
-								.add_buffer(
-									material_buf.clone()
-										.into_buffer_slice()
-										.slice(material_offset..material_offset + size_of::<MaterialUniform>())
-										.unwrap()
-								)
-								.unwrap()
-								.add_sampled_image(tex.image, sampler.clone())
-								.unwrap()
-								.build()
-								.unwrap()
-						)));
-					Ok(())
-				})
-				.or_else::<Result<_, Never>, _>(move |err| { error!("{:?}: {:?}", path, err); Ok(()) });
-			execute_future(future);
-		}
+				Box::new(
+					ImmutableTexture
+						::from_file_with_format_impl(queue.clone(), path.clone(), ImageFormat::PNG)
+						.map_err(|err| error!("{:?}", err))
+						.and_then(|(tex, future)| {
+							GpuFutureFuture::new(future).map(|_| tex.image).map_err(|err| error!("{:?}", err))
+						})
+						.or_else::<Result<_, Never>, _>(move |err| { error!("{:?}: {:?}", path, err); Ok(texture1_default) })
+				)
+			} else {
+				Box::new(ok(texture1_default))
+			};
 
-		if data.texture2_name_size != 0 {
-			file.seek(SeekFrom::Start(data.texture2_name_offset as u64))?;
-			let mut buf = vec![0; data.texture2_name_size as usize];
-			file.read_exact(&mut buf)?;
-			let path = path.as_ref().parent().unwrap().join(String::from_utf8(buf).unwrap());
+		let texture2_default = shared.shaders.texture2_default.clone();
+		let future2: Box<Future<Item = _, Error = _> + Send> =
+			if data.texture2_name_size != 0 {
+				file.seek(SeekFrom::Start(data.texture2_name_offset as u64))?;
+				let mut buf = vec![0; data.texture2_name_size as usize];
+				file.read_exact(&mut buf)?;
+				let path = path.as_ref().parent().unwrap().join(String::from_utf8(buf).unwrap());
 
-			let desc = materials[i].desc.clone();
-			let material_buf = material_buf.clone();
-			let material_offset = material_stride * i;
-			let pipeline_gbuffers = shared.pipeline_gbuffers.clone();
-			let sampler = shared.shaders.sampler.clone();
 
-			let future = ImmutableTexture
-				::from_file_with_format_impl(queue.clone(), path.clone(), ImageFormat::TGA)
-				.map_err(|err| error!("{:?}", err))
-				.and_then(|(tex, future)| {
-					GpuFutureFuture::new(future).map(|_| tex).map_err(|err| error!("{:?}", err))
-				})
-				.and_then(move |tex| {
-					desc
-						.swap(Box::new(Arc::new(
-							PersistentDescriptorSet::start(pipeline_gbuffers.clone(), 2)
-								.add_buffer(
-									material_buf.clone()
-										.into_buffer_slice()
-										.slice(material_offset..material_offset + size_of::<MaterialUniform>())
-										.unwrap()
-								)
-								.unwrap()
-								.add_sampled_image(tex.image, sampler.clone())
-								.unwrap()
-								.build()
-								.unwrap()
-						)));
-					Ok(())
-				})
-				.or_else::<Result<_, Never>, _>(move |err| { error!("{:?}: {:?}", path, err); Ok(()) });
-			execute_future(future);
-		}
+				Box::new(
+					ImmutableTexture
+						::from_file_with_format_impl(queue.clone(), path.clone(), ImageFormat::PNG)
+						.map_err(|err| error!("{:?}", err))
+						.and_then(|(tex, future)| {
+							GpuFutureFuture::new(future).map(|_| tex.image).map_err(|err| error!("{:?}", err))
+						})
+						.or_else::<Result<_, Never>, _>(move |err| { error!("{:?}: {:?}", path, err); Ok(texture2_default) })
+				)
+			} else {
+				Box::new(ok(texture2_default))
+			};
+
+
+		let desc = materials[i].desc.clone();
+		let material_buf = material_buf.clone();
+		let material_offset = material_stride * i;
+		let pipeline_gbuffers = shared.pipeline_gbuffers.clone();
+		let sampler = shared.shaders.sampler.clone();
+
+		let future = future1.join(future2)
+			.and_then(move |(tex1, tex2)| {
+				desc
+					.swap(Box::new(Arc::new(
+						PersistentDescriptorSet::start(pipeline_gbuffers.clone(), 2)
+							.add_buffer(
+								material_buf.clone()
+									.into_buffer_slice()
+									.slice(material_offset..material_offset + size_of::<MaterialUniform>())
+									.unwrap()
+							)
+							.unwrap()
+							.add_sampled_image(tex1, sampler.clone())
+							.unwrap()
+							.add_sampled_image(tex2, sampler.clone())
+							.unwrap()
+							.build()
+							.unwrap()
+					)));
+				Ok(())
+			});
+
+		execute_future(future);
 	}
 
 	let position_pool = CpuBufferPool::uniform_buffer(device.clone());
