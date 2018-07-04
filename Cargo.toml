@@ -3,6 +3,9 @@ name = "nice-game"
 version = "0.1.0"
 authors = ["IcyDefiance <icydefiance@gmail.com>"]
 
+[profile.dev]
+opt-level = 1
+
 [profile.release]
 lto = true
 
