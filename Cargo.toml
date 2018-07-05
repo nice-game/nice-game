@@ -1,10 +1,13 @@
 [package]
 name = "nice-game"
 version = "0.1.0"
-authors = ["IcyDefiance <icydefiance@gmail.com>"]
+authors = [
+	"IcyDefiance <icydefiance@gmail.com>",
+	"Mick Lionheart <micklionheart@gmail.com>"
+]
 
 [profile.dev]
-opt-level = 1
+opt-level = 0
 
 [profile.release]
 lto = true

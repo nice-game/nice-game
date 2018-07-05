@@ -41,17 +41,17 @@ impl MeshBatchShaders {
 
 		let (texture1_default, texture1_default_future) =
 				ImmutableImage::from_iter(
-					vec![(255u8, 255u8, 255u8, 0u8)].into_iter(),
+					vec![(0u8, 0u8, 255u8, 0u8)].into_iter(),
 					Dimensions::Dim2d { width: 1, height: 1 },
-					Format::R8G8B8A8Srgb,
+					Format::R8G8B8A8Unorm,
 					window.queue().clone(),
 				)?;
 
 		let (texture2_default, texture2_default_future) =
 				ImmutableImage::from_iter(
-					vec![(128u8, 128u8, 0u8, 0u8)].into_iter(),
+					vec![(127u8, 127u8, 255u8, 0u8)].into_iter(),
 					Dimensions::Dim2d { width: 1, height: 1 },
-					Format::R8G8B8A8Srgb,
+					Format::R8G8B8A8Unorm,
 					window.queue().clone(),
 				)?;
 
@@ -115,13 +115,14 @@ mod vs_gbuffers {
 	#[derive(VulkanoShader)]
 	#[ty = "vertex"]
 	#[src = "#version 450
-layout(location = 0) in vec3 position;
-layout(location = 1) in vec3 normal;
-layout(location = 2) in vec2 texcoord_main;
+layout(location = 0) in vec3 position_os;
+layout(location = 1) in vec3 normal_os;
+layout(location = 2) in vec2 texcoord;
 
-layout(location = 0) out vec3 out_normal;
-layout(location = 1) out vec2 out_texcoord_main;
-layout(location = 2) out vec3 out_base_albedo;
+layout(location = 0) out vec3 out_position_cs;
+layout(location = 1) out vec3 out_normal_cs;
+layout(location = 2) out vec2 out_texcoord;
+layout(location = 3) out vec3 out_base_albedo;
 
 layout(set = 0, binding = 0) uniform CameraPos { vec3 camera_pos; };
 layout(set = 0, binding = 1) uniform CameraRot { vec4 camera_rot; };
@@ -156,10 +157,13 @@ void main() {
 	vec4 camera_rot = camera_rot.yzwx;
 	vec4 mesh_rot = mesh_rot.yzwx;
 
-	out_normal = quat_mul(quat_inv(camera_rot), normal);
-	out_texcoord_main = texcoord_main;
+	vec3 normal_ws = quat_mul(mesh_rot, normal_os);
+	out_normal_cs = quat_mul(quat_inv(camera_rot), normal_ws);
+	vec3 position_ws = quat_mul(mesh_rot, position_os) + mesh_pos;
+	out_position_cs = quat_mul(quat_inv(camera_rot), position_ws - camera_pos);
 	out_base_albedo = base_albedo;
-	gl_Position = perspective(camera_proj, quat_mul(quat_inv(camera_rot), quat_mul(mesh_rot, position) + mesh_pos - camera_pos));
+	out_texcoord = texcoord;
+	gl_Position = perspective(camera_proj, out_position_cs);
 }"]
 	struct Dummy;
 }
@@ -169,25 +173,40 @@ mod fs_gbuffers {
 	#[derive(VulkanoShader)]
 	#[ty = "fragment"]
 	#[src = "#version 450
-layout(location = 0) in vec3 normal;
-layout(location = 1) in vec2 texcoord_main;
-layout(location = 2) in vec3 base_albedo;
+layout(location = 0) in vec3 position_cs;
+layout(location = 1) in vec3 normal_cs;
+layout(location = 2) in vec2 texcoord;
+layout(location = 3) in vec3 base_albedo;
 
 layout(location = 0) out vec4 out_albedo;
-layout(location = 1) out vec4 out_normal;
+layout(location = 1) out vec4 out_normal_cs;
 
-layout(set = 2, binding = 1) uniform sampler2D tex1;
-layout(set = 2, binding = 2) uniform sampler2D tex2;
+layout(set = 2, binding = 1) uniform sampler2D tex_albedo;
+layout(set = 2, binding = 2) uniform sampler2D tex_normal;
 
-float softSq(float x, float y) {
-	return tanh(sin(x * 6.283185307179586 * 4.0) * y);
+mat3 tangent_frame(vec3 fWorldNormal, vec3 vPosition, vec2 vTexCoord) {
+	vec3 dxPosition = dFdx(vPosition);
+	vec3 dyPosition = dFdy(vPosition);
+	vec2 dxTexCoord = dFdx(vTexCoord);
+	vec2 dyTexCoord = dFdy(vTexCoord);
+	if (dot(dxTexCoord, dxTexCoord) == 0) dxTexCoord = vec2(1, 0);
+	if (dot(dyTexCoord, dyTexCoord) == 0) dyTexCoord = vec2(0, -1);
+	vec3 dxPosPerp = cross(fWorldNormal, dxPosition);
+	vec3 dyPosPerp = cross(dyPosition, fWorldNormal);
+	vec3 fTangent = dxPosPerp * dyTexCoord.x + dyPosPerp * dxTexCoord.x;
+	vec3 fBitangent = dxPosPerp * dyTexCoord.y + dyPosPerp * dxTexCoord.y;
+	float tangentScale = inversesqrt(max(dot(fTangent, fTangent), dot(fBitangent, fBitangent)));
+	return mat3(fTangent * tangentScale, fBitangent * tangentScale, fWorldNormal);
 }
 
 void main() {
-	vec3 albedo = texture(tex2, texcoord_main).rgb;
-	//albedo = mix(base_albedo, albedo, albedo.a), 1);
-	out_albedo = vec4(sqrt(albedo), 0);
-	out_normal = vec4(normalize(normal), 1);
+	vec4 albedo = texture(tex_albedo, texcoord);
+	vec3 normal_ts = texture(tex_normal, texcoord).xyz * 2.0 - 1.0;
+	mat3 tbn = tangent_frame(normalize(normal_cs), position_cs, texcoord);
+	vec3 normal_cs = normalize(tbn * normal_ts);
+	albedo.rgb = mix(base_albedo, albedo.rgb, albedo.a);
+	out_albedo = vec4(sqrt(albedo.rgb), 0);
+	out_normal_cs = vec4(normalize(normal_cs), 1);
 }"]
 	struct Dummy;
 }

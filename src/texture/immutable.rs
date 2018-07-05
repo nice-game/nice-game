@@ -46,7 +46,8 @@ impl ImmutableTexture {
 					ImmutableImage::from_iter(
 						img.into_iter(),
 						Dimensions::Dim2d { width: width, height: height },
-						Format::R8G8B8A8Srgb,
+						//Format::R8G8B8A8Srgb,
+						Format::R8G8B8A8Unorm,
 						queue,
 					)?;
 
