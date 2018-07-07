@@ -6,9 +6,6 @@ authors = [
 	"Mick Lionheart <micklionheart@gmail.com>"
 ]
 
-[profile.dev]
-opt-level = 0
-
 [profile.release]
 lto = true
 
