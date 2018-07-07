@@ -106,7 +106,7 @@ fn main() {
 
 		while let Some(event) = raw_input.get_event() {
 			match event {
-				RawEvent::KeyboardEvent(_,  KeyId::Escape, State::Pressed) => done = true,
+				RawEvent::KeyboardEvent(_,  KeyId::Escape, State::Pressed) => done = done || controls_active,
 				RawEvent::KeyboardEvent(_,  KeyId::W, State::Pressed) => w_down = true,
 				RawEvent::KeyboardEvent(_,  KeyId::W, State::Released) => w_down = false,
 				RawEvent::KeyboardEvent(_,  KeyId::A, State::Pressed) => a_down = true,
