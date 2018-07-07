@@ -20,16 +20,18 @@ impl ImmutableTexture {
 	pub fn from_file_with_format<P>(
 		window: &Window,
 		path: P,
-		format: ImageFormat
+		format: ImageFormat,
+		srgb: bool,
 	) -> impl Future<Item = (ImmutableTexture, impl GpuFuture), Error = TextureError>
 	where P: AsRef<Path> + Send + 'static {
-		Self::from_file_with_format_impl(window.queue().clone(), path, format)
+		Self::from_file_with_format_impl(window.queue().clone(), path, format, srgb)
 	}
 
 	pub(crate) fn from_file_with_format_impl<P>(
 		queue: Arc<Queue>,
 		path: P,
-		format: ImageFormat
+		format: ImageFormat,
+		srgb: bool,
 	) -> impl Future<Item = (ImmutableTexture, impl GpuFuture), Error = TextureError>
 	where P: AsRef<Path> + Send + 'static {
 		spawn_fs(|_| {
@@ -46,7 +48,7 @@ impl ImmutableTexture {
 					ImmutableImage::from_iter(
 						img.into_iter(),
 						Dimensions::Dim2d { width: width, height: height },
-						Format::R8G8B8A8Srgb,
+						if srgb { Format::R8G8B8A8Srgb } else { Format::R8G8B8A8Unorm },
 						queue,
 					)?;
 
