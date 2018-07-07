@@ -182,10 +182,9 @@ pub fn from_nice_model(
 				file.read_exact(&mut buf)?;
 				let path = path.as_ref().parent().unwrap().join(String::from_utf8(buf).unwrap());
 
-
 				Box::new(
 					ImmutableTexture
-						::from_file_with_format_impl(queue.clone(), path.clone(), ImageFormat::PNG)
+						::from_file_with_format_impl(queue.clone(), path.clone(), ImageFormat::PNG, true)
 						.map_err(|err| error!("{:?}", err))
 						.and_then(|(tex, future)| {
 							GpuFutureFuture::new(future).map(|_| tex.image).map_err(|err| error!("{:?}", err))
@@ -204,10 +203,9 @@ pub fn from_nice_model(
 				file.read_exact(&mut buf)?;
 				let path = path.as_ref().parent().unwrap().join(String::from_utf8(buf).unwrap());
 
-
 				Box::new(
 					ImmutableTexture
-						::from_file_with_format_impl(queue.clone(), path.clone(), ImageFormat::PNG)
+						::from_file_with_format_impl(queue.clone(), path.clone(), ImageFormat::PNG, false)
 						.map_err(|err| error!("{:?}", err))
 						.and_then(|(tex, future)| {
 							GpuFutureFuture::new(future).map(|_| tex.image).map_err(|err| error!("{:?}", err))
