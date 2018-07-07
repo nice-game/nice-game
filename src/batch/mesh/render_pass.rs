@@ -1,4 +1,4 @@
-use batch::mesh::{ ALBEDO_FORMAT, NORMAL_FORMAT, DEPTH_FORMAT, MeshBatchShaders, TargetVertex, mesh::MeshVertexDefinition };
+use batch::mesh::{ ALBEDO_FORMAT, NORMAL_FORMAT, DEPTH_FORMAT, MeshShaders, TargetVertex, mesh::MeshVertexDefinition };
 use std::sync::Arc;
 use vulkano::{
 	format::Format,
@@ -6,15 +6,15 @@ use vulkano::{
 	pipeline::{ GraphicsPipeline, GraphicsPipelineAbstract },
 };
 
-pub struct MeshBatchShared {
-	pub(super) shaders: Arc<MeshBatchShaders>,
+pub struct MeshRenderPass {
+	pub(super) shaders: Arc<MeshShaders>,
 	pub(super) subpass_gbuffers: Subpass<Arc<RenderPassAbstract + Send + Sync>>,
 	pub(super) subpass_target: Subpass<Arc<RenderPassAbstract + Send + Sync>>,
 	pub(super) pipeline_gbuffers: Arc<GraphicsPipelineAbstract + Send + Sync + 'static>,
 	pub(super) pipeline_target: Arc<GraphicsPipelineAbstract + Send + Sync + 'static>,
 }
-impl MeshBatchShared {
-	pub fn new(shaders: Arc<MeshBatchShaders>, format: Format) -> Arc<Self> {
+impl MeshRenderPass {
+	pub fn new(shaders: Arc<MeshShaders>, format: Format) -> Arc<Self> {
 		let render_pass: Arc<RenderPassAbstract + Send + Sync> =
 			Arc::new(
 				ordered_passes_renderpass!(

@@ -1,5 +1,5 @@
 use atom::Atom;
-use batch::mesh::{ MeshBatchShared, mesh::{ Material, MaterialTextureInfo, MaterialUniform, Mesh, MeshFromFileError } };
+use batch::mesh::{ MeshRenderPass, mesh::{ Material, MaterialTextureInfo, MaterialUniform, Mesh, MeshFromFileError } };
 use byteorder::{LE, ReadBytesExt};
 use cgmath::{ Quaternion, Vector3 };
 use cpu_pool::{ execute_future, GpuFutureFuture };
@@ -16,7 +16,7 @@ use vulkano::{
 pub fn from_nice_model(
 	device: Arc<Device>,
 	queue: Arc<Queue>,
-	shared: Arc<MeshBatchShared>,
+	render_pass: Arc<MeshRenderPass>,
 	path: impl AsRef<Path> + Clone + Send + 'static,
 	position: Vector3<f32>,
 	rotation: Quaternion<f32>,
@@ -153,7 +153,7 @@ pub fn from_nice_model(
 				indices: indices.clone().into_buffer_slice().slice(index_start..index_start + index_count).unwrap(),
 				desc:
 					Arc::new(Atom::new(Box::new(Arc::new(
-						PersistentDescriptorSet::start(shared.pipeline_gbuffers.clone(), 2)
+						PersistentDescriptorSet::start(render_pass.pipeline_gbuffers.clone(), 2)
 							.add_buffer(
 								material_buf.clone()
 									.into_buffer_slice()
@@ -161,9 +161,9 @@ pub fn from_nice_model(
 									.unwrap()
 							)
 							.unwrap()
-							.add_sampled_image(shared.shaders.texture1_default.clone(), shared.shaders.sampler.clone())
+							.add_sampled_image(render_pass.shaders.texture1_default.clone(), render_pass.shaders.sampler.clone())
 							.unwrap()
-							.add_sampled_image(shared.shaders.texture2_default.clone(), shared.shaders.sampler.clone())
+							.add_sampled_image(render_pass.shaders.texture2_default.clone(), render_pass.shaders.sampler.clone())
 							.unwrap()
 							.build()
 							.unwrap()
@@ -174,7 +174,7 @@ pub fn from_nice_model(
 	}
 
 	for (i, data) in mat_temp_datas.into_iter().enumerate() {
-		let texture1_default = shared.shaders.texture1_default.clone();
+		let texture1_default = render_pass.shaders.texture1_default.clone();
 		let future1: Box<Future<Item = _, Error = _> + Send> =
 			if data.texture1_name_size != 0 {
 				file.seek(SeekFrom::Start(data.texture1_name_offset as u64))?;
@@ -195,7 +195,7 @@ pub fn from_nice_model(
 				Box::new(ok(texture1_default))
 			};
 
-		let texture2_default = shared.shaders.texture2_default.clone();
+		let texture2_default = render_pass.shaders.texture2_default.clone();
 		let future2: Box<Future<Item = _, Error = _> + Send> =
 			if data.texture2_name_size != 0 {
 				file.seek(SeekFrom::Start(data.texture2_name_offset as u64))?;
@@ -220,8 +220,8 @@ pub fn from_nice_model(
 		let desc = materials[i].desc.clone();
 		let material_buf = material_buf.clone();
 		let material_offset = material_stride * i;
-		let pipeline_gbuffers = shared.pipeline_gbuffers.clone();
-		let sampler = shared.shaders.sampler.clone();
+		let pipeline_gbuffers = render_pass.pipeline_gbuffers.clone();
+		let sampler = render_pass.shaders.sampler.clone();
 
 		let future = future1.join(future2)
 			.and_then(move |(tex1, tex2)| {

@@ -12,7 +12,7 @@ use nice_game::{
 	GpuFuture,
 	RenderTarget,
 	Version,
-	batch::mesh::{ Mesh, MeshBatch, MeshBatchShaders, MeshBatchShared },
+	batch::mesh::{ Mesh, MeshBatch, MeshShaders, MeshRenderPass },
 	camera::Camera,
 	window::{ CursorState, Event, EventsLoop, MouseButton, Window, WindowEvent },
 };
@@ -38,8 +38,8 @@ fn main() {
 			"nIce Game"
 		);
 
-	let (mesh_batch_shaders, mesh_batch_shaders_future) = MeshBatchShaders::new(&mut window).unwrap();
-	let mesh_batch_shared = MeshBatchShared::new(mesh_batch_shaders, window.format());
+	let (mesh_batch_shaders, mesh_batch_shaders_future) = MeshShaders::new(&mut window).unwrap();
+	let mesh_batch_shared = MeshRenderPass::new(mesh_batch_shaders, window.format());
 
 	let (mesh, mesh_future) =
 		block_on(

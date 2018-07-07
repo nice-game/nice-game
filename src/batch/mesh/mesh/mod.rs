@@ -1,7 +1,7 @@
 mod codec;
 
 use atom::Atom;
-use batch::mesh::MeshBatchShared;
+use batch::mesh::MeshRenderPass;
 use cgmath::{ Quaternion, Vector3 };
 use cpu_pool::spawn_fs;
 use futures::prelude::*;
@@ -36,7 +36,7 @@ pub struct Mesh {
 impl Mesh {
 	pub fn from_file(
 		window: &Window,
-		shared: Arc<MeshBatchShared>,
+		render_pass: Arc<MeshRenderPass>,
 		path: impl AsRef<Path> + Clone + Send + 'static,
 		position: Vector3<f32>,
 		rotation: Quaternion<f32>,
@@ -44,7 +44,7 @@ impl Mesh {
 	{
 		let device = window.device().clone();
 		let queue = window.queue().clone();
-		spawn_fs(move |_| codec::from_nice_model(device, queue, shared, path, position, rotation))
+		spawn_fs(move |_| codec::from_nice_model(device, queue, render_pass, path, position, rotation))
 	}
 
 	pub fn set_position(&mut self, position: Vector3<f32>) -> Result<(), DeviceMemoryAllocError> {
@@ -59,7 +59,7 @@ impl Mesh {
 
 	pub(super) fn make_commands(
 		&mut self,
-		shared: &MeshBatchShared,
+		render_pass: &MeshRenderPass,
 		camera_desc: impl DescriptorSet + Clone + Send + Sync + 'static,
 		mesh_desc_pool: &mut FixedSizeDescriptorSetsPool<Arc<GraphicsPipelineAbstract + Send + Sync + 'static>>,
 		queue_family: QueueFamily,
@@ -67,9 +67,9 @@ impl Mesh {
 	) -> Result<AutoCommandBuffer, OomError> {
 		let mut cmd = AutoCommandBufferBuilder
 			::secondary_graphics_one_time_submit(
-				shared.shaders.target_vertices.device().clone(),
+				render_pass.shaders.target_vertices.device().clone(),
 				queue_family,
-				shared.subpass_gbuffers.clone()
+				render_pass.subpass_gbuffers.clone()
 			)?;
 
 		for mat in &self.materials {
@@ -77,7 +77,7 @@ impl Mesh {
 
 			cmd = cmd
 				.draw_indexed(
-					shared.pipeline_gbuffers.clone(),
+					render_pass.pipeline_gbuffers.clone(),
 					DynamicState {
 						line_width: None,
 						viewports:

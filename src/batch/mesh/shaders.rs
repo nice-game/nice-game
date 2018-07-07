@@ -12,7 +12,7 @@ use vulkano::{
 };
 use window::Window;
 
-pub struct MeshBatchShaders {
+pub struct MeshShaders {
 	pub(super) queue: Arc<Queue>,
 	pub(super) target_vertices: Arc<ImmutableBuffer<[TargetVertex; 6]>>,
 	pub(super) shader_gbuffers_vertex: vs_gbuffers::Shader,
@@ -23,8 +23,8 @@ pub struct MeshBatchShaders {
 	pub(super) texture2_default: Arc<ImageViewAccess + Send + Sync + 'static>,
 	pub(super) sampler: Arc<Sampler>,
 }
-impl MeshBatchShaders {
-	pub fn new(window: &Window) -> Result<(Arc<Self>, impl GpuFuture), MeshBatchShadersError> {
+impl MeshShaders {
+	pub fn new(window: &Window) -> Result<(Arc<Self>, impl GpuFuture), MeshShadersError> {
 		let (target_vertices, target_vertices_future) =
 			ImmutableBuffer::from_data(
 				[
@@ -82,31 +82,31 @@ impl MeshBatchShaders {
 }
 
 #[derive(Debug)]
-pub enum MeshBatchShadersError {
+pub enum MeshShadersError {
 	DeviceMemoryAllocError(DeviceMemoryAllocError),
 	ImageCreationError(ImageCreationError),
 	OomError(OomError),
 	SamplerCreationError(SamplerCreationError),
 	TooManyObjects,
 }
-impl From<DeviceMemoryAllocError> for MeshBatchShadersError {
+impl From<DeviceMemoryAllocError> for MeshShadersError {
 	fn from(val: DeviceMemoryAllocError) -> Self {
-		MeshBatchShadersError::DeviceMemoryAllocError(val)
+		MeshShadersError::DeviceMemoryAllocError(val)
 	}
 }
-impl From<ImageCreationError> for MeshBatchShadersError {
+impl From<ImageCreationError> for MeshShadersError {
 	fn from(val: ImageCreationError) -> Self {
-		MeshBatchShadersError::ImageCreationError(val)
+		MeshShadersError::ImageCreationError(val)
 	}
 }
-impl From<OomError> for MeshBatchShadersError {
+impl From<OomError> for MeshShadersError {
 	fn from(val: OomError) -> Self {
-		MeshBatchShadersError::OomError(val)
+		MeshShadersError::OomError(val)
 	}
 }
-impl From<SamplerCreationError> for MeshBatchShadersError {
+impl From<SamplerCreationError> for MeshShadersError {
 	fn from(val: SamplerCreationError) -> Self {
-		MeshBatchShadersError::SamplerCreationError(val)
+		MeshShadersError::SamplerCreationError(val)
 	}
 }
 

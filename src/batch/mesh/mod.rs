@@ -1,10 +1,10 @@
 mod mesh;
 mod shaders;
-mod shared;
+mod render_pass;
 
 pub use self::mesh::Mesh;
-pub use self::shaders::{ MeshBatchShaders, MeshBatchShadersError };
-pub use self::shared::MeshBatchShared;
+pub use self::shaders::{ MeshShaders, MeshShadersError };
+pub use self::render_pass::MeshRenderPass;
 use { ImageFramebuffer, ObjectId, RenderTarget, window::Window };
 use camera::Camera;
 use cgmath::vec4;
@@ -28,7 +28,7 @@ const NORMAL_FORMAT: Format = Format::R32G32B32A32Sfloat;
 const DEPTH_FORMAT: Format = Format::D16Unorm;
 
 pub struct MeshBatch {
-	shared: Arc<MeshBatchShared>,
+	render_pass: Arc<MeshRenderPass>,
 	meshes: Vec<Mesh>,
 	framebuffers: Vec<ImageFramebuffer>,
 	target_id: ObjectId,
@@ -40,17 +40,17 @@ pub struct MeshBatch {
 impl MeshBatch {
 	pub fn new(
 		target: &RenderTarget,
-		shared: Arc<MeshBatchShared>
+		render_pass: Arc<MeshRenderPass>
 	) -> Result<(Self, impl GpuFuture), DeviceMemoryAllocError> {
-		let camera_desc_pool_gbuffers = FixedSizeDescriptorSetsPool::new(shared.pipeline_gbuffers.clone(), 0);
-		let camera_desc_pool_target = FixedSizeDescriptorSetsPool::new(shared.pipeline_target.clone(), 1);
-		let mesh_desc_pool = FixedSizeDescriptorSetsPool::new(shared.pipeline_gbuffers.clone(), 1);
-		let (gbuffers, desc_target, future) = Self::make_gbuffers(target, &shared)?;
+		let camera_desc_pool_gbuffers = FixedSizeDescriptorSetsPool::new(render_pass.pipeline_gbuffers.clone(), 0);
+		let camera_desc_pool_target = FixedSizeDescriptorSetsPool::new(render_pass.pipeline_target.clone(), 1);
+		let mesh_desc_pool = FixedSizeDescriptorSetsPool::new(render_pass.pipeline_gbuffers.clone(), 1);
+		let (gbuffers, desc_target, future) = Self::make_gbuffers(target, &render_pass)?;
 
 		let framebuffers =
 			target.images().iter()
 				.map(|image| Self::make_framebuffer(
-					shared.subpass_target.render_pass().clone(),
+					render_pass.subpass_target.render_pass().clone(),
 					gbuffers.clone(),
 					image.clone(),
 				))
@@ -58,7 +58,7 @@ impl MeshBatch {
 
 		Ok((
 			Self {
-				shared: shared,
+				render_pass: render_pass,
 				meshes: vec![],
 				framebuffers: framebuffers,
 				target_id: target.id_root().make_id(),
@@ -94,13 +94,13 @@ impl MeshBatch {
 			if let Some(framebuffer) = framebuffer.as_ref() {
 				(framebuffer.clone(), None)
 			} else {
-				let (gbuffers, desc_target, future) = Self::make_gbuffers(target, &self.shared)?;
+				let (gbuffers, desc_target, future) = Self::make_gbuffers(target, &self.render_pass)?;
 
 				self.desc_target = desc_target;
 
 				let image_framebuffer =
 					Self::make_framebuffer(
-						self.shared.subpass_target.render_pass().clone(),
+						self.render_pass.subpass_target.render_pass().clone(),
 						gbuffers,
 						target.images()[image_num].clone()
 					)?;
@@ -128,7 +128,7 @@ impl MeshBatch {
 		let mut command_buffer =
 			AutoCommandBufferBuilder
 				::primary_one_time_submit(
-					self.shared.shaders.target_vertices.device().clone(),
+					self.render_pass.shaders.target_vertices.device().clone(),
 					window.queue().family()
 				)?
 				.begin_render_pass(
@@ -144,7 +144,7 @@ impl MeshBatch {
 					command_buffer
 						.execute_commands(
 							mesh.make_commands(
-								&self.shared,
+								&self.render_pass,
 								camera_desc_gbuffers.clone(),
 								&mut self.mesh_desc_pool,
 								window.queue().family(),
@@ -159,14 +159,14 @@ impl MeshBatch {
 			command_buffer.next_subpass(false)
 				.unwrap()
 				.draw(
-					self.shared.pipeline_target.clone(),
+					self.render_pass.pipeline_target.clone(),
 					DynamicState {
 						line_width: None,
 						viewports:
 							Some(vec![Viewport { origin: [0.0, 0.0], dimensions: dimensions, depth_range: 0.0..1.0 }]),
 						scissors: None,
 					},
-					vec![self.shared.shaders.target_vertices.clone()],
+					vec![self.render_pass.shaders.target_vertices.clone()],
 					(
 						self.desc_target.clone(),
 						self.camera_desc_pool_target.next()
@@ -222,7 +222,7 @@ impl MeshBatch {
 
 	fn make_gbuffers(
 		target: &RenderTarget,
-		shared: &MeshBatchShared,
+		shared: &MeshRenderPass,
 	) -> Result<(GBuffers, Arc<DescriptorSet + Send + Sync + 'static>, impl GpuFuture), DeviceMemoryAllocError> {
 		let dimensions = target.images()[0].dimensions().width_height();
 		let image_color =
