@@ -14,7 +14,7 @@ use vulkano::{
 use window::Window;
 
 pub struct ImmutableTexture {
-	pub(crate) image: Arc<ImageViewAccess + Send + Sync + 'static>,
+	image: Arc<ImageViewAccess + Send + Sync + 'static>,
 }
 impl ImmutableTexture {
 	pub fn from_file_with_format<P>(

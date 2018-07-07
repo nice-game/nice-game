@@ -5,7 +5,7 @@ use cgmath::{ Quaternion, Vector3 };
 use cpu_pool::{ execute_future, GpuFutureFuture };
 use futures::{ future::ok, prelude::* };
 use std::{ fs::File, io::{ self, prelude::*, SeekFrom }, mem::{ size_of, transmute }, path::{ Path }, sync::Arc };
-use texture::{ ImageFormat, ImmutableTexture };
+use texture::{ ImageFormat, ImmutableTexture, Texture };
 use vulkano::{
 	buffer::{ BufferAccess, BufferUsage, CpuAccessibleBuffer, CpuBufferPool, ImmutableBuffer },
 	descriptor::descriptor_set::PersistentDescriptorSet,
@@ -187,7 +187,7 @@ pub fn from_nice_model(
 						::from_file_with_format_impl(queue.clone(), path.clone(), ImageFormat::PNG, true)
 						.map_err(|err| error!("{:?}", err))
 						.and_then(|(tex, future)| {
-							GpuFutureFuture::new(future).map(|_| tex.image).map_err(|err| error!("{:?}", err))
+							GpuFutureFuture::new(future).map(|_| tex.image().clone()).map_err(|err| error!("{:?}", err))
 						})
 						.or_else::<Result<_, Never>, _>(move |err| { error!("{:?}: {:?}", path, err); Ok(texture1_default) })
 				)
@@ -208,7 +208,7 @@ pub fn from_nice_model(
 						::from_file_with_format_impl(queue.clone(), path.clone(), ImageFormat::PNG, false)
 						.map_err(|err| error!("{:?}", err))
 						.and_then(|(tex, future)| {
-							GpuFutureFuture::new(future).map(|_| tex.image).map_err(|err| error!("{:?}", err))
+							GpuFutureFuture::new(future).map(|_| tex.image().clone()).map_err(|err| error!("{:?}", err))
 						})
 						.or_else::<Result<_, Never>, _>(move |err| { error!("{:?}: {:?}", path, err); Ok(texture2_default) })
 				)
