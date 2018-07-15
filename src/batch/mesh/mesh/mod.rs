@@ -67,9 +67,9 @@ impl Mesh {
 	) -> Result<AutoCommandBuffer, OomError> {
 		let mut cmd = AutoCommandBufferBuilder
 			::secondary_graphics_one_time_submit(
-				render_pass.device().clone(),
+				render_pass.shaders.target_vertices.device().clone(),
 				queue_family,
-				render_pass.gbuffers_subpass0().clone()
+				render_pass.subpass_gbuffers.clone()
 			)?;
 
 		for mat in &self.materials {
@@ -77,7 +77,7 @@ impl Mesh {
 
 			cmd = cmd
 				.draw_indexed(
-					render_pass.gbuffers_pipeline().clone(),
+					render_pass.pipeline_gbuffers.clone(),
 					DynamicState {
 						line_width: None,
 						viewports:

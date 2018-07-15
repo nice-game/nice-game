@@ -26,25 +26,28 @@ const DEPTH_FORMAT: Format = Format::D16Unorm;
 pub struct MeshBatch {
 	render_passes: Arc<MeshRenderPasses>,
 	meshes: Vec<Mesh>,
-	target_id: ObjectId,
 	gbuffers_framebuffer: Arc<FramebufferAbstract + Send + Sync + 'static>,
-	gbuffers_camera_desc_pool: FixedSizeDescriptorSetsPool<Arc<GraphicsPipelineAbstract + Send + Sync + 'static>>,
 	target_framebuffers: Vec<ImageFramebuffer>,
-	target_desc: Arc<DescriptorSet + Send + Sync + 'static>,
-	target_camera_desc_pool: FixedSizeDescriptorSetsPool<Arc<GraphicsPipelineAbstract + Send + Sync + 'static>>,
+	target_id: ObjectId,
+	desc_target: Arc<DescriptorSet + Send + Sync + 'static>,
+	camera_desc_pool_gbuffers: FixedSizeDescriptorSetsPool<Arc<GraphicsPipelineAbstract + Send + Sync + 'static>>,
+	camera_desc_pool_target: FixedSizeDescriptorSetsPool<Arc<GraphicsPipelineAbstract + Send + Sync + 'static>>,
 	mesh_desc_pool: FixedSizeDescriptorSetsPool<Arc<GraphicsPipelineAbstract + Send + Sync + 'static>>,
 }
 impl MeshBatch {
-	pub fn new(target: &RenderTarget, render_passes: Arc<MeshRenderPasses>) -> Result<Self, DeviceMemoryAllocError> {
-		let gbuffers_camera_desc_pool = FixedSizeDescriptorSetsPool::new(render_passes.gbuffers_pipeline().clone(), 0);
-		let target_camera_desc_pool = FixedSizeDescriptorSetsPool::new(render_passes.target_pipeline().clone(), 1);
-		let mesh_desc_pool = FixedSizeDescriptorSetsPool::new(render_passes.gbuffers_pipeline().clone(), 1);
-		let (gbuffers, target_desc) = Self::make_gbuffers(target, &render_passes)?;
+	pub fn new(
+		target: &RenderTarget,
+		render_passes: Arc<MeshRenderPasses>
+	) -> Result<Self, DeviceMemoryAllocError> {
+		let camera_desc_pool_gbuffers = FixedSizeDescriptorSetsPool::new(render_passes.pipeline_gbuffers.clone(), 0);
+		let camera_desc_pool_target = FixedSizeDescriptorSetsPool::new(render_passes.pipeline_target.clone(), 1);
+		let mesh_desc_pool = FixedSizeDescriptorSetsPool::new(render_passes.pipeline_gbuffers.clone(), 1);
+		let (gbuffers, desc_target) = Self::make_gbuffers(target, &render_passes)?;
 		let GBuffers { image_color, image_normal, image_depth } = gbuffers;
 
 		let gbuffers_framebuffer =
 			Arc::new(
-				Framebuffer::start(render_passes.gbuffers_render_pass().clone())
+				Framebuffer::start(render_passes.subpass_gbuffers.render_pass().clone())
 					.add(image_color)
 					.and_then(|fb| fb.add(image_normal))
 					.and_then(|fb| fb.add(image_depth))
@@ -58,7 +61,7 @@ impl MeshBatch {
 		let target_framebuffers =
 			target.images().iter()
 				.map(|image| {
-					Framebuffer::start(render_passes.target_render_pass().clone())
+					Framebuffer::start(render_passes.subpass_target.render_pass().clone())
 						.add(image.clone())
 						.and_then(|fb| fb.build())
 						.map(|fb| ImageFramebuffer::new(Arc::downgrade(image), Arc::new(fb)))
@@ -76,9 +79,9 @@ impl MeshBatch {
 				gbuffers_framebuffer: gbuffers_framebuffer,
 				target_framebuffers: target_framebuffers,
 				target_id: target.id_root().make_id(),
-				target_desc: target_desc,
-				gbuffers_camera_desc_pool: gbuffers_camera_desc_pool,
-				target_camera_desc_pool: target_camera_desc_pool,
+				desc_target: desc_target,
+				camera_desc_pool_gbuffers: camera_desc_pool_gbuffers,
+				camera_desc_pool_target: camera_desc_pool_target,
 				mesh_desc_pool: mesh_desc_pool,
 			}
 		)
@@ -110,7 +113,7 @@ impl MeshBatch {
 				let image = &target.images()[image_num];
 				let target_framebuffer =
 					Arc::new(
-						Framebuffer::start(self.render_passes.target_render_pass().clone())
+						Framebuffer::start(self.render_passes.subpass_target.render_pass().clone())
 							.add(image.clone())
 							.and_then(|fb| fb.build())
 							.map_err(|err| match err {
@@ -124,13 +127,13 @@ impl MeshBatch {
 				if target_framebuffer.width() != self.gbuffers_framebuffer.width() ||
 					target_framebuffer.height() != self.gbuffers_framebuffer.height()
 				{
-					let (gbuffers, target_desc) = Self::make_gbuffers(target, &self.render_passes)?;
+					let (gbuffers, desc_target) = Self::make_gbuffers(target, &self.render_passes)?;
 					let GBuffers { image_color, image_normal, image_depth } = gbuffers;
 
-					self.target_desc = target_desc;
+					self.desc_target = desc_target;
 					self.gbuffers_framebuffer =
 						Arc::new(
-							Framebuffer::start(self.render_passes.gbuffers_render_pass().clone())
+							Framebuffer::start(self.render_passes.subpass_gbuffers.render_pass().clone())
 								.add(image_color)
 								.and_then(|fb| fb.add(image_normal))
 								.and_then(|fb| fb.add(image_depth))
@@ -147,7 +150,7 @@ impl MeshBatch {
 
 		let camera_desc_gbuffers =
 			Arc::new(
-				self.gbuffers_camera_desc_pool.next()
+				self.camera_desc_pool_gbuffers.next()
 					.add_buffer(camera.position_buffer.clone())
 					.unwrap()
 					.add_buffer(camera.rotation_buffer.clone())
@@ -163,7 +166,7 @@ impl MeshBatch {
 		let mut command_buffer =
 			AutoCommandBufferBuilder
 				::primary_one_time_submit(
-					self.render_passes.device().clone(),
+					self.render_passes.shaders.target_vertices.device().clone(),
 					window.queue().family()
 				)?
 				.begin_render_pass(
@@ -197,17 +200,17 @@ impl MeshBatch {
 				.begin_render_pass(target_framebuffer, false, vec![[0.0, 0.0, 0.0, 1.0].into()])
 				.unwrap()
 				.draw(
-					self.render_passes.target_pipeline().clone(),
+					self.render_passes.pipeline_target.clone(),
 					DynamicState {
 						line_width: None,
 						viewports:
 							Some(vec![Viewport { origin: [0.0, 0.0], dimensions: dimensions, depth_range: 0.0..1.0 }]),
 						scissors: None,
 					},
-					vec![self.render_passes.shaders().target_vertices.clone()],
+					vec![self.render_passes.shaders.target_vertices.clone()],
 					(
-						self.target_desc.clone(),
-						self.target_camera_desc_pool.next()
+						self.desc_target.clone(),
+						self.camera_desc_pool_target.next()
 							.add_buffer(camera.position_buffer.clone())
 							.unwrap()
 							.add_buffer(camera.rotation_buffer.clone())
@@ -243,35 +246,35 @@ impl MeshBatch {
 		let dimensions = target.images()[0].dimensions().width_height();
 		let image_color =
 			Self::make_sampled_attachment(
-				shared.device().clone(),
+				shared.shaders.target_vertices.device().clone(),
 				dimensions,
 				ALBEDO_FORMAT
 			)?;
 		let image_normal =
 			Self::make_sampled_attachment(
-				shared.device().clone(),
+				shared.shaders.target_vertices.device().clone(),
 				dimensions,
 				NORMAL_FORMAT
 			)?;
 		let image_depth =
 			Self::make_sampled_attachment(
-				shared.device().clone(),
+				shared.shaders.target_vertices.device().clone(),
 				dimensions,
 				DEPTH_FORMAT
 			)?;
 
-		let target_desc =
+		let desc_target =
 			Arc::new(
-				PersistentDescriptorSet::start(shared.target_pipeline().clone(), 0)
-					.add_sampled_image(image_color.clone(), shared.shaders().sampler.clone()).unwrap()
-					.add_sampled_image(image_normal.clone(), shared.shaders().sampler.clone()).unwrap()
-					.add_sampled_image(image_depth.clone(), shared.shaders().sampler.clone()).unwrap()
+				PersistentDescriptorSet::start(shared.pipeline_target.clone(), 0)
+					.add_sampled_image(image_color.clone(), shared.shaders.sampler.clone()).unwrap()
+					.add_sampled_image(image_normal.clone(), shared.shaders.sampler.clone()).unwrap()
+					.add_sampled_image(image_depth.clone(), shared.shaders.sampler.clone()).unwrap()
 					.build().unwrap()
 			);
 
 		Ok((
 			GBuffers { image_color: image_color, image_normal: image_normal, image_depth: image_depth },
-			target_desc
+			desc_target
 		))
 	}
 }

@@ -1,22 +1,21 @@
 use batch::mesh::{ ALBEDO_FORMAT, NORMAL_FORMAT, DEPTH_FORMAT, MeshShaders, TargetVertex, mesh::MeshVertexDefinition };
 use std::sync::Arc;
 use vulkano::{
-	device::Device,
 	format::Format,
 	framebuffer::{ RenderPassAbstract, Subpass },
 	pipeline::{ GraphicsPipeline, GraphicsPipelineAbstract },
 };
 
 pub struct MeshRenderPasses {
-	shaders: Arc<MeshShaders>,
-	gbuffers_subpass0: Subpass<Arc<RenderPassAbstract + Send + Sync>>,
-	gbuffers_pipeline: Arc<GraphicsPipelineAbstract + Send + Sync + 'static>,
-	target_subpass0: Subpass<Arc<RenderPassAbstract + Send + Sync>>,
-	target_pipeline: Arc<GraphicsPipelineAbstract + Send + Sync + 'static>,
+	pub(super) shaders: Arc<MeshShaders>,
+	pub(super) subpass_gbuffers: Subpass<Arc<RenderPassAbstract + Send + Sync>>,
+	pub(super) subpass_target: Subpass<Arc<RenderPassAbstract + Send + Sync>>,
+	pub(super) pipeline_gbuffers: Arc<GraphicsPipelineAbstract + Send + Sync + 'static>,
+	pub(super) pipeline_target: Arc<GraphicsPipelineAbstract + Send + Sync + 'static>,
 }
 impl MeshRenderPasses {
 	pub fn new(shaders: Arc<MeshShaders>, format: Format) -> Arc<Self> {
-		let gbuffers_render_pass: Arc<RenderPassAbstract + Send + Sync> =
+		let render_pass_gbuffers: Arc<RenderPassAbstract + Send + Sync> =
 			Arc::new(
 				single_pass_renderpass!(
 					shaders.target_vertices.device().clone(),
@@ -29,22 +28,7 @@ impl MeshRenderPasses {
 				)
 				.unwrap()
 			);
-		let gbuffers_subpass0 = Subpass::from(gbuffers_render_pass, 0).unwrap();
-		let gbuffers_pipeline =
-			Arc::new(
-				GraphicsPipeline::start()
-					.vertex_input(MeshVertexDefinition::new())
-					.vertex_shader(shaders.shader_gbuffers_vertex.main_entry_point(), ())
-					.triangle_list()
-					.viewports_dynamic_scissors_irrelevant(1)
-					.fragment_shader(shaders.shader_gbuffers_fragment.main_entry_point(), ())
-					.render_pass(gbuffers_subpass0.clone())
-					.depth_stencil_simple_depth()
-					.build(shaders.target_vertices.device().clone())
-					.expect("failed to create pipeline")
-			);
-
-		let target_render_pass: Arc<RenderPassAbstract + Send + Sync> =
+		let render_pass_target: Arc<RenderPassAbstract + Send + Sync> =
 			Arc::new(
 				single_pass_renderpass!(
 					shaders.target_vertices.device().clone(),
@@ -53,8 +37,25 @@ impl MeshRenderPasses {
 				)
 				.unwrap()
 			);
-		let target_subpass0 = Subpass::from(target_render_pass, 0).unwrap();
-		let target_pipeline =
+
+		let subpass_gbuffers = Subpass::from(render_pass_gbuffers, 0).unwrap();
+		let subpass_target = Subpass::from(render_pass_target, 0).unwrap();
+
+		let pipeline_gbuffers =
+			Arc::new(
+				GraphicsPipeline::start()
+					.vertex_input(MeshVertexDefinition::new())
+					.vertex_shader(shaders.shader_gbuffers_vertex.main_entry_point(), ())
+					.triangle_list()
+					.viewports_dynamic_scissors_irrelevant(1)
+					.fragment_shader(shaders.shader_gbuffers_fragment.main_entry_point(), ())
+					.render_pass(subpass_gbuffers.clone())
+					.depth_stencil_simple_depth()
+					.build(shaders.target_vertices.device().clone())
+					.expect("failed to create pipeline")
+			);
+
+		let pipeline_target =
 			Arc::new(
 				GraphicsPipeline::start()
 					.vertex_input_single_buffer::<TargetVertex>()
@@ -62,49 +63,17 @@ impl MeshRenderPasses {
 					.triangle_list()
 					.viewports_dynamic_scissors_irrelevant(1)
 					.fragment_shader(shaders.shader_target_fragment.main_entry_point(), ())
-					.render_pass(target_subpass0.clone())
+					.render_pass(subpass_target.clone())
 					.build(shaders.target_vertices.device().clone())
 					.expect("failed to create pipeline")
 			);
 
 		Arc::new(Self {
 			shaders: shaders,
-			gbuffers_subpass0: gbuffers_subpass0,
-			gbuffers_pipeline: gbuffers_pipeline,
-			target_subpass0: target_subpass0,
-			target_pipeline: target_pipeline,
+			subpass_gbuffers: subpass_gbuffers,
+			subpass_target: subpass_target,
+			pipeline_gbuffers: pipeline_gbuffers,
+			pipeline_target: pipeline_target,
 		})
-	}
-
-	pub(crate) fn device(&self) -> &Arc<Device> {
-		self.shaders.target_vertices.device()
-	}
-
-	pub(crate) fn shaders(&self) -> &Arc<MeshShaders> {
-		&self.shaders
-	}
-
-	pub(crate) fn gbuffers_render_pass(&self) -> &Arc<RenderPassAbstract + Send + Sync> {
-		&self.gbuffers_subpass0.render_pass()
-	}
-
-	pub(crate) fn gbuffers_subpass0(&self) -> &Subpass<Arc<RenderPassAbstract + Send + Sync>> {
-		&self.gbuffers_subpass0
-	}
-
-	pub(crate) fn gbuffers_pipeline(&self) -> &Arc<GraphicsPipelineAbstract + Send + Sync + 'static> {
-		&self.gbuffers_pipeline
-	}
-
-	pub(crate) fn target_render_pass(&self) -> &Arc<RenderPassAbstract + Send + Sync> {
-		&self.target_subpass0.render_pass()
-	}
-
-	pub(crate) fn target_subpass0(&self) -> &Subpass<Arc<RenderPassAbstract + Send + Sync>> {
-		&self.target_subpass0
-	}
-
-	pub(crate) fn target_pipeline(&self) -> &Arc<GraphicsPipelineAbstract + Send + Sync + 'static> {
-		&self.target_pipeline
 	}
 }
