@@ -12,7 +12,7 @@ use nice_game::{
 	GpuFuture,
 	RenderTarget,
 	Version,
-	batch::mesh::{ Mesh, MeshBatch, MeshShaders, MeshRenderPasses },
+	batch::mesh::{ Mesh, MeshBatch, MeshShaders, MeshRenderPass },
 	camera::Camera,
 	window::{ CursorState, Event, EventsLoop, MouseButton, Window, WindowEvent },
 };
@@ -39,7 +39,7 @@ fn main() {
 		);
 
 	let (mesh_batch_shaders, mesh_batch_shaders_future) = MeshShaders::new(&mut window).unwrap();
-	let mesh_batch_shared = MeshRenderPasses::new(mesh_batch_shaders, window.format());
+	let mesh_batch_shared = MeshRenderPass::new(mesh_batch_shaders, window.format());
 
 	let (mesh, mesh_future) =
 		block_on(
@@ -52,7 +52,7 @@ fn main() {
 			)
 		).unwrap();
 
-	let mut mesh_batch = MeshBatch::new(&window, mesh_batch_shared).unwrap();
+	let (mut mesh_batch, mesh_batch_future) = MeshBatch::new(&window, mesh_batch_shared).unwrap();
 	mesh_batch.add_mesh(mesh);
 
 	let mut character = Character::new();
@@ -68,7 +68,7 @@ fn main() {
 			1500.0,
 		).unwrap();
 
-	window.join_future(mesh_future.join(mesh_batch_shaders_future));
+	window.join_future(mesh_future.join(mesh_batch_shaders_future).join(mesh_batch_future));
 
 	let mut controls_active = false;
 	let mut w_down = false;
@@ -155,8 +155,11 @@ fn main() {
 		camera.set_rotation(yaw * Quaternion::from_angle_x(Rad(character.rotation.y * PI / 2.0))).unwrap();
 
 		window
-			.present(|window, image_num, future| {
-				let cmds = mesh_batch.commands(window, window, image_num, &camera).unwrap();
+			.present(|window, image_num, mut future| {
+				let (cmds, cmds_future) = mesh_batch.commands(window, window, image_num, &camera).unwrap();
+				if let Some(cmds_future) = cmds_future {
+					future = Box::new(future.join(cmds_future));
+				}
 				future.then_execute(window.queue().clone(), cmds).unwrap()
 			})
 			.unwrap();

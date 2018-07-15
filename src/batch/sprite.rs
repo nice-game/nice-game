@@ -356,8 +356,7 @@ mod vs {
 	#[src = "#version 450
 
 layout(location = 0) in vec2 position;
-
-layout(location = 0) out vec2 tex_coord;
+layout(location = 0) out vec2 tex_coords;
 
 layout(set = 0, binding = 0) uniform Target {
 	uvec2 size;
@@ -370,7 +369,7 @@ layout(set = 1, binding = 0) uniform SpriteDynamic {
 layout(set = 2, binding = 0) uniform sampler2D tex;
 
 void main() {
-	tex_coord = position;
+	tex_coords = position;
 	gl_Position = vec4(2 * (sprite_dynamic.pos + textureSize(tex, 0) * position) / target.size - 1, 0.0, 1.0);
 }
 "]
@@ -383,13 +382,13 @@ mod fs {
 	#[ty = "fragment"]
 	#[src = "#version 450
 
-layout(location = 0) in vec2 tex_coord;
+layout(location = 0) in vec2 tex_coords;
 layout(location = 0) out vec4 f_color;
 
 layout(set = 2, binding = 0) uniform sampler2D tex;
 
 void main() {
-	f_color = texture(tex, tex_coord);
+	f_color = texture(tex, tex_coords);
 }
 "]
 	struct Dummy;

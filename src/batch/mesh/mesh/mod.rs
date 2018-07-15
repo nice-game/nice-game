@@ -1,7 +1,7 @@
 mod codec;
 
 use atom::Atom;
-use batch::mesh::MeshRenderPasses;
+use batch::mesh::MeshRenderPass;
 use cgmath::{ Quaternion, Vector3 };
 use cpu_pool::spawn_fs;
 use futures::prelude::*;
@@ -36,7 +36,7 @@ pub struct Mesh {
 impl Mesh {
 	pub fn from_file(
 		window: &Window,
-		render_pass: Arc<MeshRenderPasses>,
+		render_pass: Arc<MeshRenderPass>,
 		path: impl AsRef<Path> + Clone + Send + 'static,
 		position: Vector3<f32>,
 		rotation: Quaternion<f32>,
@@ -59,7 +59,7 @@ impl Mesh {
 
 	pub(super) fn make_commands(
 		&mut self,
-		render_pass: &MeshRenderPasses,
+		render_pass: &MeshRenderPass,
 		camera_desc: impl DescriptorSet + Clone + Send + Sync + 'static,
 		mesh_desc_pool: &mut FixedSizeDescriptorSetsPool<Arc<GraphicsPipelineAbstract + Send + Sync + 'static>>,
 		queue_family: QueueFamily,
