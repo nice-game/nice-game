@@ -1,5 +1,5 @@
 use atom::Atom;
-use batch::mesh::{ MeshRenderPass, mesh::{ Material, MaterialTextureInfo, MaterialUniform, Mesh, MeshFromFileError } };
+use batch::mesh::{ MeshRenderPasses, mesh::{ Material, MaterialTextureInfo, MaterialUniform, Mesh, MeshFromFileError } };
 use byteorder::{LE, ReadBytesExt};
 use cgmath::{ Quaternion, Vector3 };
 use cpu_pool::{ execute_future, GpuFutureFuture };
@@ -16,7 +16,7 @@ use vulkano::{
 pub fn from_nice_model(
 	device: Arc<Device>,
 	queue: Arc<Queue>,
-	render_pass: Arc<MeshRenderPass>,
+	render_pass: Arc<MeshRenderPasses>,
 	path: impl AsRef<Path> + Clone + Send + 'static,
 	position: Vector3<f32>,
 	rotation: Quaternion<f32>,

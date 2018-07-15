@@ -3,7 +3,6 @@ use std::sync::Arc;
 use vulkano::{
 	OomError,
 	buffer::{ BufferUsage, ImmutableBuffer },
-	device::Queue,
 	format::Format,
 	image::{ Dimensions, ImageCreationError, ImageViewAccess, ImmutableImage },
 	memory::DeviceMemoryAllocError,
@@ -13,7 +12,6 @@ use vulkano::{
 use window::Window;
 
 pub struct MeshShaders {
-	pub(super) queue: Arc<Queue>,
 	pub(super) target_vertices: Arc<ImmutableBuffer<[TargetVertex; 6]>>,
 	pub(super) shader_gbuffers_vertex: vs_gbuffers::Shader,
 	pub(super) shader_gbuffers_fragment: fs_gbuffers::Shader,
@@ -57,7 +55,6 @@ impl MeshShaders {
 
 		Ok((
 			Arc::new(Self {
-				queue: window.queue().clone(),
 				target_vertices: target_vertices,
 				shader_gbuffers_vertex: vs_gbuffers::Shader::load(window.device().clone())?,
 				shader_gbuffers_fragment: fs_gbuffers::Shader::load(window.device().clone())?,
@@ -218,7 +215,10 @@ mod vs_target {
 	#[src = "#version 450
 layout(location = 0) in vec2 position;
 
+layout(location = 0) out vec2 tex_coord;
+
 void main() {
+	tex_coord = position;
 	gl_Position = vec4(position * 2 - 1, 0.0, 1.0);
 }
 "]
@@ -230,12 +230,13 @@ mod fs_target {
 	#[derive(VulkanoShader)]
 	#[ty = "fragment"]
 	#[src = "#version 450
+layout(location = 0) in vec2 tex_coord;
+
 layout(location = 0) out vec4 out_color;
 
-layout(set = 0, binding = 0) uniform Resolution { vec4 resolution; };
-layout(set = 0, binding = 1, input_attachment_index = 0) uniform subpassInput albedo;
-layout(set = 0, binding = 2, input_attachment_index = 1) uniform subpassInput normal;
-layout(set = 0, binding = 3, input_attachment_index = 2) uniform subpassInput depth;
+layout(set = 0, binding = 0) uniform sampler2D albedo;
+layout(set = 0, binding = 1) uniform sampler2D normal;
+layout(set = 0, binding = 2) uniform sampler2D depth;
 layout(set = 1, binding = 0) uniform CameraPos { vec3 camera_pos; };
 layout(set = 1, binding = 1) uniform CameraRot { vec4 camera_rot; };
 layout(set = 1, binding = 2) uniform CameraProj { vec4 camera_proj; };
@@ -248,14 +249,14 @@ void main() {
 	// stupid math library puts w first, so we flip it here
 	vec4 camera_rot = camera_rot.yzwx;
 
-	vec3 g_position_ds = vec3(gl_FragCoord.xy * resolution.zw, 2.0 * subpassLoad(depth).x) - 1.0;
+	vec3 g_position_ds = vec3(gl_FragCoord.xy * textureSize(albedo, 0), 2.0 * texture(depth, tex_coord).x) - 1.0;
 	vec3 g_position_cs = vec3(g_position_ds.xy / camera_proj.xy, -1.0) * camera_proj.w / (g_position_ds.z + camera_proj.z);
 	vec3 g_position_ws = quat_mul(camera_rot, g_position_cs) + camera_pos;
 
-	vec3 g_normal_cs = subpassLoad(normal).xyz;
+	vec3 g_normal_cs = texture(normal, tex_coord).xyz;
 	vec3 g_normal_ws = quat_mul(camera_rot, g_normal_cs);
 
-	vec3 g_albedo = subpassLoad(albedo).rgb;
+	vec3 g_albedo = texture(albedo, tex_coord).rgb;
 	g_albedo *= g_albedo;
 
 	vec3 light = vec3(0);

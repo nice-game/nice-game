@@ -6,35 +6,40 @@ use vulkano::{
 	pipeline::{ GraphicsPipeline, GraphicsPipelineAbstract },
 };
 
-pub struct MeshRenderPass {
+pub struct MeshRenderPasses {
 	pub(super) shaders: Arc<MeshShaders>,
 	pub(super) subpass_gbuffers: Subpass<Arc<RenderPassAbstract + Send + Sync>>,
 	pub(super) subpass_target: Subpass<Arc<RenderPassAbstract + Send + Sync>>,
 	pub(super) pipeline_gbuffers: Arc<GraphicsPipelineAbstract + Send + Sync + 'static>,
 	pub(super) pipeline_target: Arc<GraphicsPipelineAbstract + Send + Sync + 'static>,
 }
-impl MeshRenderPass {
+impl MeshRenderPasses {
 	pub fn new(shaders: Arc<MeshShaders>, format: Format) -> Arc<Self> {
-		let render_pass: Arc<RenderPassAbstract + Send + Sync> =
+		let render_pass_gbuffers: Arc<RenderPassAbstract + Send + Sync> =
 			Arc::new(
-				ordered_passes_renderpass!(
+				single_pass_renderpass!(
 					shaders.target_vertices.device().clone(),
 					attachments: {
 						color: { load: Clear, store: Store, format: ALBEDO_FORMAT, samples: 1, },
 						normal: { load: Clear, store: Store, format: NORMAL_FORMAT, samples: 1, },
-						depth: { load: Clear, store: Store, format: DEPTH_FORMAT, samples: 1, },
-						out: { load: Clear, store: Store, format: format, samples: 1, }
+						depth: { load: Clear, store: Store, format: DEPTH_FORMAT, samples: 1, }
 					},
-					passes: [
-						{ color: [color, normal], depth_stencil: {depth}, input: [] },
-						{ color: [out], depth_stencil: {}, input: [color, normal, depth] }
-					]
+					pass: { color: [color, normal], depth_stencil: {depth} }
+				)
+				.unwrap()
+			);
+		let render_pass_target: Arc<RenderPassAbstract + Send + Sync> =
+			Arc::new(
+				single_pass_renderpass!(
+					shaders.target_vertices.device().clone(),
+					attachments: { out: { load: Clear, store: Store, format: format, samples: 1, } },
+					pass: { color: [out], depth_stencil: {} }
 				)
 				.unwrap()
 			);
 
-		let subpass_gbuffers = Subpass::from(render_pass.clone(), 0).unwrap();
-		let subpass_target = Subpass::from(render_pass, 1).unwrap();
+		let subpass_gbuffers = Subpass::from(render_pass_gbuffers, 0).unwrap();
+		let subpass_target = Subpass::from(render_pass_target, 0).unwrap();
 
 		let pipeline_gbuffers =
 			Arc::new(
