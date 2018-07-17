@@ -71,4 +71,8 @@ impl MeshRenderPass {
 			pipeline_target: pipeline_target,
 		})
 	}
+
+	pub(crate) fn render_pass(&self) -> &Arc<RenderPassAbstract + Send + Sync> {
+		self.subpass_gbuffers.render_pass()
+	}
 }
