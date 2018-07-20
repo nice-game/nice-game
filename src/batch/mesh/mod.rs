@@ -9,13 +9,14 @@ use { ImageFramebuffer, ObjectId, RenderTarget, window::Window };
 use camera::Camera;
 use cgmath::vec4;
 use std::sync::Arc;
+use texture::TargetTexture;
 use vulkano::{
 	OomError,
 	buffer::{ BufferUsage, ImmutableBuffer },
 	command_buffer::{ AutoCommandBuffer, AutoCommandBufferBuilder, BuildError, DynamicState },
 	descriptor::{ DescriptorSet, descriptor_set::{ FixedSizeDescriptorSetsPool, PersistentDescriptorSet } },
 	device::Device,
-	format::Format,
+	format::{ ClearValue, Format },
 	framebuffer::{ Framebuffer, FramebufferAbstract, FramebufferCreationError, RenderPassAbstract },
 	image::{ AttachmentImage, ImageCreationError, ImageViewAccess },
 	memory::{ DeviceMemoryAllocError },
@@ -33,7 +34,7 @@ pub struct MeshBatch {
 	target_id: ObjectId,
 	gbuffers: GBuffers,
 	camera_desc_pool_gbuffers: FixedSizeDescriptorSetsPool<Arc<GraphicsPipelineAbstract + Send + Sync + 'static>>,
-	camera_desc_pool_target: FixedSizeDescriptorSetsPool<Arc<GraphicsPipelineAbstract + Send + Sync + 'static>>,
+	camera_desc_pool_history: FixedSizeDescriptorSetsPool<Arc<GraphicsPipelineAbstract + Send + Sync + 'static>>,
 	mesh_desc_pool: FixedSizeDescriptorSetsPool<Arc<GraphicsPipelineAbstract + Send + Sync + 'static>>,
 }
 impl MeshBatch {
@@ -42,7 +43,7 @@ impl MeshBatch {
 		render_pass: Arc<MeshRenderPass>
 	) -> Result<(Self, impl GpuFuture), DeviceMemoryAllocError> {
 		let camera_desc_pool_gbuffers = FixedSizeDescriptorSetsPool::new(render_pass.pipeline_gbuffers.clone(), 0);
-		let camera_desc_pool_target = FixedSizeDescriptorSetsPool::new(render_pass.pipeline_target.clone(), 1);
+		let camera_desc_pool_history = FixedSizeDescriptorSetsPool::new(render_pass.pipeline_history.clone(), 1);
 		let mesh_desc_pool = FixedSizeDescriptorSetsPool::new(render_pass.pipeline_gbuffers.clone(), 1);
 		let (gbuffers, future) = Self::make_gbuffers(target, &render_pass)?;
 
@@ -53,7 +54,7 @@ impl MeshBatch {
 				target_id: target.id_root().make_id(),
 				gbuffers: gbuffers,
 				camera_desc_pool_gbuffers: camera_desc_pool_gbuffers,
-				camera_desc_pool_target: camera_desc_pool_target,
+				camera_desc_pool_history: camera_desc_pool_history,
 				mesh_desc_pool: mesh_desc_pool,
 			},
 			future
@@ -98,6 +99,9 @@ impl MeshBatch {
 
 		let dimensions = [image.dimensions().width() as f32, image.dimensions().height() as f32];
 
+		let history_index = self.gbuffers.history_index as usize;
+		self.gbuffers.history_index = !self.gbuffers.history_index;
+
 		let mut command_buffer =
 			AutoCommandBufferBuilder
 				::primary_one_time_submit(
@@ -110,6 +114,7 @@ impl MeshBatch {
 							.add(self.gbuffers.color.clone())
 							.and_then(|fb| fb.add(self.gbuffers.normal.clone()))
 							.and_then(|fb| fb.add(self.gbuffers.depth.clone()))
+							.and_then(|fb| fb.add(self.gbuffers.history[history_index].clone()))
 							.and_then(|fb| fb.add(image.clone()))
 							.and_then(|fb| fb.build())
 							.map_err(|err| match err {
@@ -118,7 +123,7 @@ impl MeshBatch {
 							})?
 					),
 					true,
-					vec![[0.0, 0.0, 0.0, 1.0].into(), [0.0; 4].into(), 1.0.into(), [0.0, 0.0, 0.0, 1.0].into()]
+					vec![[0.0, 0.0, 0.0, 1.0].into(), [0.0; 4].into(), 1.0.into(), ClearValue::None, ClearValue::None]
 				)
 				.unwrap();
 
@@ -139,39 +144,59 @@ impl MeshBatch {
 				};
 		}
 
-		Ok((
-			command_buffer.next_subpass(false)
-				.unwrap()
-				.draw(
-					self.render_pass.pipeline_target.clone(),
-					DynamicState {
-						line_width: None,
-						viewports:
-							Some(vec![Viewport { origin: [0.0, 0.0], dimensions: dimensions, depth_range: 0.0..1.0 }]),
-						scissors: None,
-					},
-					vec![self.render_pass.shaders.target_vertices.clone()],
-					(
-						self.gbuffers.desc_target.clone(),
-						self.camera_desc_pool_target.next()
-							.add_buffer(camera.position_buffer.clone())
-							.unwrap()
-							.add_buffer(camera.rotation_buffer.clone())
-							.unwrap()
-							.add_buffer(camera.projection_buffer.clone())
-							.unwrap()
-							.build()
-							.unwrap(),
-					),
-					()
-				)
-				.unwrap()
-				.end_render_pass()
-				.unwrap()
-				.build()
-				.map_err(|err| match err { BuildError::OomError(err) => err, err => unreachable!("{}", err) })?,
-			gbuffers_future
-		))
+		let dynamic_state =
+			DynamicState {
+				line_width: None,
+				viewports: Some(vec![Viewport { origin: [0.0, 0.0], dimensions: dimensions, depth_range: 0.0..1.0 }]),
+				scissors: None,
+			};
+
+		let command_buffer = command_buffer.next_subpass(false)
+			.unwrap()
+			.draw(
+				self.render_pass.pipeline_history.clone(),
+				dynamic_state.clone(),
+				vec![self.render_pass.shaders.target_vertices.clone()],
+				(
+					self.gbuffers.history_desc.clone(),
+					self.camera_desc_pool_history.next()
+						.add_buffer(camera.position_buffer.clone())
+						.unwrap()
+						.add_buffer(camera.rotation_buffer.clone())
+						.unwrap()
+						.add_buffer(camera.projection_buffer.clone())
+						.unwrap()
+						.build()
+						.unwrap(),
+				),
+				()
+			)
+			.unwrap()
+			.next_subpass(false)
+			.unwrap()
+			.draw(
+				self.render_pass.pipeline_target.clone(),
+				dynamic_state,
+				vec![self.render_pass.shaders.target_vertices.clone()],
+				self.gbuffers.target_descs[history_index].clone(),
+				()
+			)
+			.unwrap()
+			.end_render_pass()
+			.unwrap()
+			.build()
+			.map_err(|err| match err { BuildError::OomError(err) => err, err => unreachable!("{}", err) })?;
+
+		Ok((command_buffer, gbuffers_future))
+	}
+
+	fn make_input_attachment(
+		device: Arc<Device>,
+		dimensions: [u32; 2],
+		format: Format,
+	) -> Result<Arc<AttachmentImage>, DeviceMemoryAllocError> {
+		AttachmentImage::input_attachment(device, dimensions, format)
+			.map_err(|err| match err { ImageCreationError::AllocError(err) => err, err => unreachable!(err) })
 	}
 
 	fn make_transient_input_attachment(
@@ -206,9 +231,22 @@ impl MeshBatch {
 				dimensions,
 				DEPTH_FORMAT
 			)?;
+		let history =
+			[
+				Self::make_input_attachment(
+					shared.shaders.target_vertices.device().clone(),
+					dimensions,
+					target.format()
+				)?,
+				Self::make_input_attachment(
+					shared.shaders.target_vertices.device().clone(),
+					dimensions,
+					target.format()
+				)?
+			];
 
 		let dimensions = [dimensions[0] as f32, dimensions[1] as f32];
-		let (target_size, target_size_future) =
+		let (size, size_future) =
 			ImmutableBuffer::from_data(
 				vec4(
 					dimensions[0],
@@ -220,10 +258,10 @@ impl MeshBatch {
 				shared.shaders.queue.clone()
 			)?;
 
-		let desc_target =
+		let history_desc =
 			Arc::new(
-				PersistentDescriptorSet::start(shared.pipeline_target.clone(), 0)
-					.add_buffer(target_size)
+				PersistentDescriptorSet::start(shared.pipeline_history.clone(), 0)
+					.add_buffer(size)
 					.unwrap()
 					.add_image(color.clone())
 					.unwrap()
@@ -235,7 +273,36 @@ impl MeshBatch {
 					.unwrap()
 			);
 
-		Ok((GBuffers { color: color, normal: normal, depth: depth, desc_target: desc_target }, target_size_future))
+		let target_descs =
+			[
+				Arc::new(
+					PersistentDescriptorSet::start(shared.pipeline_target.clone(), 0)
+						.add_image(history[0].clone())
+						.unwrap()
+						.build()
+						.unwrap()
+				) as _,
+				Arc::new(
+					PersistentDescriptorSet::start(shared.pipeline_target.clone(), 0)
+						.add_image(history[1].clone())
+						.unwrap()
+						.build()
+						.unwrap()
+				) as _
+			];
+
+		Ok((
+			GBuffers {
+				color: color,
+				normal: normal,
+				depth: depth,
+				history_desc: history_desc,
+				target_descs: target_descs,
+				history: history,
+				history_index: false
+			},
+			size_future
+		))
 	}
 }
 
@@ -244,7 +311,10 @@ struct GBuffers {
 	color: Arc<AttachmentImage>,
 	normal: Arc<AttachmentImage>,
 	depth: Arc<AttachmentImage>,
-	desc_target: Arc<DescriptorSet + Send + Sync + 'static>,
+	history_desc: Arc<DescriptorSet + Send + Sync + 'static>,
+	target_descs: [Arc<DescriptorSet + Send + Sync + 'static>; 2],
+	history: [Arc<AttachmentImage>; 2],
+	history_index: bool,
 }
 
 #[derive(Debug, Clone)]
