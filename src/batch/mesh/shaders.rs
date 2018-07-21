@@ -21,6 +21,7 @@ pub struct MeshShaders {
 	pub(super) shader_history_fragment: fs_history::Shader,
 	pub(super) shader_target_vertex: vs_target::Shader,
 	pub(super) shader_target_fragment: fs_target::Shader,
+	pub(super) black_pixel: Arc<ImageViewAccess + Send + Sync + 'static>,
 	pub(super) texture1_default: Arc<ImageViewAccess + Send + Sync + 'static>,
 	pub(super) texture2_default: Arc<ImageViewAccess + Send + Sync + 'static>,
 	pub(super) sampler: Arc<Sampler>,
@@ -40,6 +41,14 @@ impl MeshShaders {
 				BufferUsage::vertex_buffer(),
 				window.queue().clone(),
 			)?;
+
+		let (black_pixel, black_pixel_future) =
+				ImmutableImage::from_iter(
+					vec![(0u8, 0u8, 255u8, 0u8)].into_iter(),
+					Dimensions::Dim2d { width: 1, height: 1 },
+					Format::R8G8B8A8Unorm,
+					window.queue().clone(),
+				)?;
 
 		let (texture1_default, texture1_default_future) =
 				ImmutableImage::from_iter(
@@ -67,6 +76,7 @@ impl MeshShaders {
 				shader_history_fragment: fs_history::Shader::load(window.device().clone())?,
 				shader_target_vertex: vs_target::Shader::load(window.device().clone())?,
 				shader_target_fragment: fs_target::Shader::load(window.device().clone())?,
+				black_pixel: black_pixel,
 				texture1_default: texture1_default,
 				texture2_default: texture2_default,
 				sampler:
@@ -80,7 +90,7 @@ impl MeshShaders {
 						0.0, 1.0, 0.0, 0.0
 					)?,
 			}),
-			target_vertices_future.join(texture1_default_future).join(texture2_default_future)
+			target_vertices_future.join(black_pixel_future).join(texture1_default_future).join(texture2_default_future)
 		))
 	}
 }
@@ -237,9 +247,10 @@ mod fs_history {
 layout(location = 0) out vec4 out_color;
 
 layout(set = 0, binding = 0) uniform Resolution { vec4 resolution; };
-layout(set = 0, binding = 1, input_attachment_index = 0) uniform subpassInput albedo;
-layout(set = 0, binding = 2, input_attachment_index = 1) uniform subpassInput normal;
-layout(set = 0, binding = 3, input_attachment_index = 2) uniform subpassInput depth;
+layout(set = 0, binding = 1) uniform sampler2D prevOut;
+layout(set = 0, binding = 2, input_attachment_index = 0) uniform subpassInput albedo;
+layout(set = 0, binding = 3, input_attachment_index = 1) uniform subpassInput normal;
+layout(set = 0, binding = 4, input_attachment_index = 2) uniform subpassInput depth;
 layout(set = 1, binding = 0) uniform CameraPos { vec3 camera_pos; };
 layout(set = 1, binding = 1) uniform CameraRot { vec4 camera_rot; };
 layout(set = 1, binding = 2) uniform CameraProj { vec4 camera_proj; };
