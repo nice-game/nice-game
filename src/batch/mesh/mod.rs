@@ -7,7 +7,7 @@ pub use self::shaders::{ MeshShaders, MeshShadersError };
 pub use self::render_pass::MeshRenderPass;
 use { ImageFramebuffer, ObjectId, RenderTarget, window::Window };
 use camera::Camera;
-use cgmath::vec4;
+use cgmath::{ vec4, Vector4 };
 use std::sync::Arc;
 use texture::TargetTexture;
 use vulkano::{
@@ -151,6 +151,26 @@ impl MeshBatch {
 				scissors: None,
 			};
 
+		let history_desc =
+			if self.gbuffers.history_initialized {
+				self.gbuffers.history_descs[history_index].clone()
+			} else {
+				Arc::new(
+					PersistentDescriptorSet::start(self.render_pass.pipeline_history.clone(), 0)
+						.add_buffer(self.gbuffers.size.clone())
+						.unwrap()
+						.add_sampled_image(self.render_pass.shaders.black_pixel.clone(), self.render_pass.shaders.sampler.clone())
+						.unwrap()
+						.add_image(self.gbuffers.color.clone())
+						.unwrap()
+						.add_image(self.gbuffers.normal.clone())
+						.unwrap()
+						.add_image(self.gbuffers.depth.clone())
+						.unwrap()
+						.build()
+						.unwrap()
+				)
+			};
 		let command_buffer = command_buffer.next_subpass(false)
 			.unwrap()
 			.draw(
@@ -158,7 +178,7 @@ impl MeshBatch {
 				dynamic_state.clone(),
 				vec![self.render_pass.shaders.target_vertices.clone()],
 				(
-					self.gbuffers.history_desc.clone(),
+					history_desc,
 					self.camera_desc_pool_history.next()
 						.add_buffer(camera.position_buffer.clone())
 						.unwrap()
@@ -190,12 +210,12 @@ impl MeshBatch {
 		Ok((command_buffer, gbuffers_future))
 	}
 
-	fn make_input_attachment(
+	fn make_sampled_input_attachment(
 		device: Arc<Device>,
 		dimensions: [u32; 2],
 		format: Format,
 	) -> Result<Arc<AttachmentImage>, DeviceMemoryAllocError> {
-		AttachmentImage::input_attachment(device, dimensions, format)
+		AttachmentImage::sampled_input_attachment(device, dimensions, format)
 			.map_err(|err| match err { ImageCreationError::AllocError(err) => err, err => unreachable!(err) })
 	}
 
@@ -233,12 +253,12 @@ impl MeshBatch {
 			)?;
 		let history =
 			[
-				Self::make_input_attachment(
+				Self::make_sampled_input_attachment(
 					shared.shaders.target_vertices.device().clone(),
 					dimensions,
 					target.format()
 				)?,
-				Self::make_input_attachment(
+				Self::make_sampled_input_attachment(
 					shared.shaders.target_vertices.device().clone(),
 					dimensions,
 					target.format()
@@ -258,20 +278,39 @@ impl MeshBatch {
 				shared.shaders.queue.clone()
 			)?;
 
-		let history_desc =
-			Arc::new(
-				PersistentDescriptorSet::start(shared.pipeline_history.clone(), 0)
-					.add_buffer(size)
-					.unwrap()
-					.add_image(color.clone())
-					.unwrap()
-					.add_image(normal.clone())
-					.unwrap()
-					.add_image(depth.clone())
-					.unwrap()
-					.build()
-					.unwrap()
-			);
+		let history_descs =
+			[
+				Arc::new(
+					PersistentDescriptorSet::start(shared.pipeline_history.clone(), 0)
+						.add_buffer(size.clone())
+						.unwrap()
+						.add_sampled_image(history[1].clone(), shared.shaders.sampler.clone())
+						.unwrap()
+						.add_image(color.clone())
+						.unwrap()
+						.add_image(normal.clone())
+						.unwrap()
+						.add_image(depth.clone())
+						.unwrap()
+						.build()
+						.unwrap()
+				) as _,
+				Arc::new(
+					PersistentDescriptorSet::start(shared.pipeline_history.clone(), 0)
+						.add_buffer(size.clone())
+						.unwrap()
+						.add_sampled_image(history[0].clone(), shared.shaders.sampler.clone())
+						.unwrap()
+						.add_image(color.clone())
+						.unwrap()
+						.add_image(normal.clone())
+						.unwrap()
+						.add_image(depth.clone())
+						.unwrap()
+						.build()
+						.unwrap()
+				) as _
+			];
 
 		let target_descs =
 			[
@@ -293,13 +332,15 @@ impl MeshBatch {
 
 		Ok((
 			GBuffers {
+				size: size,
 				color: color,
 				normal: normal,
 				depth: depth,
-				history_desc: history_desc,
+				history_descs: history_descs,
 				target_descs: target_descs,
 				history: history,
-				history_index: false
+				history_index: false,
+				history_initialized: false,
 			},
 			size_future
 		))
@@ -308,13 +349,15 @@ impl MeshBatch {
 
 #[derive(Clone)]
 struct GBuffers {
+	size: Arc<ImmutableBuffer<Vector4<f32>>>,
 	color: Arc<AttachmentImage>,
 	normal: Arc<AttachmentImage>,
 	depth: Arc<AttachmentImage>,
-	history_desc: Arc<DescriptorSet + Send + Sync + 'static>,
+	history_descs: [Arc<DescriptorSet + Send + Sync + 'static>; 2],
 	target_descs: [Arc<DescriptorSet + Send + Sync + 'static>; 2],
 	history: [Arc<AttachmentImage>; 2],
 	history_index: bool,
+	history_initialized: bool,
 }
 
 #[derive(Debug, Clone)]
