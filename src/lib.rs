@@ -8,6 +8,7 @@ extern crate lazy_static;
 #[macro_use]
 extern crate log;
 extern crate num_cpus;
+extern crate rusttype;
 #[macro_use]
 extern crate vulkano;
 #[macro_use]
