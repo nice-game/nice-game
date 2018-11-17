@@ -160,6 +160,13 @@ impl Drawable2D for TextSprite {
 	) -> Result<AutoCommandBuffer, OomError> {
 		let mut cmds = AutoCommandBufferBuilder::secondary_graphics_one_time_submit(shared.shaders().device().clone(), queue_family, shared.subpass().clone())?;
 
+		let state =
+			DynamicState {
+				line_width: None,
+				viewports: Some(vec![Viewport { origin: [0.0, 0.0], dimensions: dimensions, depth_range: 0.0..1.0 }]),
+				scissors: None,
+			};
+
 		for (id, pos) in &self.positions {
 			if let Some(future) = self.futures.get(&id).map(|f| f.clone()) {
 				match future.wait(Some(Default::default())) {
@@ -172,17 +179,7 @@ impl Drawable2D for TextSprite {
 			cmds = cmds
 				.draw(
 					shared.pipeline().clone(),
-					DynamicState {
-						line_width: None,
-						viewports: Some(vec![
-							Viewport {
-								origin: [0.0, 0.0],
-								dimensions: dimensions,
-								depth_range: 0.0..1.0,
-							}
-						]),
-						scissors: None,
-					},
+					&state,
 					vec![shared.shaders().vertices().clone()],
 					(
 						target_desc.clone(),

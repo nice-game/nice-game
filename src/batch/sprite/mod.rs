@@ -218,15 +218,10 @@ impl Drawable2D for Sprite {
 			AutoCommandBufferBuilder::secondary_graphics_one_time_submit(shared.shaders().device().clone(), queue_family, shared.subpass().clone())?
 				.draw(
 					shared.pipeline().clone(),
-					DynamicState {
+					&DynamicState {
 						line_width: None,
-						viewports: Some(vec![
-							Viewport {
-								origin: [0.0, 0.0],
-								dimensions: dimensions,
-								depth_range: 0.0..1.0,
-							}
-						]),
+						viewports:
+							Some(vec![Viewport { origin: [0.0, 0.0], dimensions: dimensions, depth_range: 0.0..1.0 }]),
 						scissors: None,
 					},
 					vec![shared.shaders().vertices().clone()],

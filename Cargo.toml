@@ -19,10 +19,10 @@ lazy_static = "1.0"
 log = "0.4"
 num_cpus = "1.8"
 rusttype = "0.6"
-vulkano = "0.9"
-vulkano-shader-derive = "0.9"
-vulkano-win = "0.9"
-winit = "0.11"
+vulkano = "0.10"
+vulkano-shader-derive = "0.10"
+vulkano-win = "0.10"
+winit = "0.17"
 
 [workspace]
 members = [

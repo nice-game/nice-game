@@ -173,7 +173,7 @@ impl MeshBatch {
 			.unwrap()
 			.draw(
 				self.render_pass.pipeline_history.clone(),
-				dynamic_state.clone(),
+				&dynamic_state,
 				vec![self.render_pass.shaders.target_vertices.clone()],
 				(
 					history_desc,
@@ -194,7 +194,7 @@ impl MeshBatch {
 			.unwrap()
 			.draw(
 				self.render_pass.pipeline_target.clone(),
-				dynamic_state,
+				&dynamic_state,
 				vec![self.render_pass.shaders.target_vertices.clone()],
 				self.gbuffers.target_descs[history_index].clone(),
 				()

@@ -57,7 +57,7 @@ fn main() {
 	loop {
 		let mut done = false;
 		events.poll_events(|event| match event {
-			Event::WindowEvent { event: WindowEvent::Closed, .. } => done = true,
+			Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => done = true,
 			_ => (),
 		});
 

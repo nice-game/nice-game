@@ -1,7 +1,6 @@
-pub use winit::{ CursorState, Event, MouseButton, WindowEvent, WindowId };
+pub use winit::{ Event, MouseButton, WindowEvent, WindowId, dpi::{ LogicalPosition, LogicalSize } };
 
 use { Context, ObjectIdRoot, RenderTarget };
-use cgmath::Vector2;
 use std::{ collections::HashMap, iter::Iterator, sync::{ Arc, atomic::{ AtomicBool, Ordering } }};
 use vulkano::{
 	device::{ Device, DeviceExtensions, Queue },
@@ -36,10 +35,10 @@ impl EventsLoop {
 		let resized = &mut self.resized;
 		self.events.poll_events(|event| {
 			match event {
-				Event::WindowEvent { event: WindowEvent::Closed, window_id } => {
+				Event::WindowEvent { event: WindowEvent::CloseRequested, window_id } => {
 					resized.remove(&window_id);
 				},
-				Event::WindowEvent { event: WindowEvent::Resized(_, _), window_id } => {
+				Event::WindowEvent { event: WindowEvent::Resized(_), window_id } => {
 					resized[&window_id].store(true, Ordering::Relaxed);
 				},
 				_ => (),
@@ -91,7 +90,16 @@ impl Window {
 				surface.clone(),
 				caps.min_image_count,
 				Format::B8G8R8A8Srgb,
-				caps.current_extent.unwrap_or(surface.window().get_inner_size().map(|(x, y)| [x, y]).unwrap()),
+				caps.current_extent
+					.unwrap_or(
+						surface.window()
+							.get_inner_size()
+							.map(|size| {
+								let size: (u32, u32) = size.into();
+								[size.0, size.1]
+							})
+							.unwrap()
+					),
 				1,
 				caps.supported_usage_flags,
 				&queue,
@@ -138,7 +146,15 @@ impl Window {
 			let dimensions = self.surface.capabilities(self.device.physical_device())
 				.expect("failed to get surface capabilities")
 				.current_extent
-				.unwrap_or(self.surface.window().get_inner_size().map(|(x, y)| [x, y]).unwrap());
+				.unwrap_or(
+					self.surface.window()
+						.get_inner_size()
+						.map(|size| {
+							let size: (u32, u32) = size.into();
+							[size.0, size.1]
+						})
+						.unwrap()
+				);
 
 			let (swapchain, images) =
 				match self.swapchain.recreate_with_dimension(dimensions) {
@@ -187,16 +203,12 @@ impl Window {
 		Ok(())
 	}
 
-	pub fn get_inner_size(&self) -> Option<Vector2<u32>> {
-		self.surface.window().get_inner_size().map(|size| size.into())
+	pub fn get_inner_size(&self) -> Option<LogicalSize> {
+		self.surface.window().get_inner_size()
 	}
 
-	pub fn set_cursor_position(&self, pos: Vector2<i32>) -> Result<(), ()> {
-		self.surface.window().set_cursor_position(pos.x, pos.y)
-	}
-
-	pub fn set_cursor_state(&self, state: CursorState) -> Result<(), String> {
-		self.surface.window().set_cursor_state(state)
+	pub fn set_cursor_position(&self, pos: LogicalPosition) -> Result<(), String> {
+		self.surface.window().set_cursor_position(pos)
 	}
 
 	pub(super) fn device(&self) -> &Arc<Device> {
