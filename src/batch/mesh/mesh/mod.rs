@@ -72,18 +72,20 @@ impl Mesh {
 				render_pass.subpass_gbuffers.clone()
 			)?;
 
+		let state =
+			DynamicState {
+				line_width: None,
+				viewports: Some(vec![Viewport { origin: [0.0, 0.0], dimensions: dimensions, depth_range: 0.0..1.0 }]),
+				scissors: None,
+			};
+
 		for mat in &self.materials {
 			let desc = mat.desc.take().unwrap();
 
 			cmd = cmd
 				.draw_indexed(
 					render_pass.pipeline_gbuffers.clone(),
-					DynamicState {
-						line_width: None,
-						viewports:
-							Some(vec![Viewport { origin: [0.0, 0.0], dimensions: dimensions, depth_range: 0.0..1.0 }]),
-						scissors: None,
-					},
+					&state,
 					vec![self.positions.clone(), self.normals.clone(), self.texcoords_main.clone()],
 					mat.indices.clone(),
 					(

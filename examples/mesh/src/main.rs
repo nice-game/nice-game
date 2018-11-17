@@ -12,9 +12,11 @@ use nice_game::{
 	GpuFuture,
 	RenderTarget,
 	Version,
-	batch::mesh::{ Mesh, MeshBatch, MeshShaders, MeshRenderPass },
+	batch::{
+		mesh::{ Mesh, MeshBatch, MeshShaders, MeshRenderPass },
+	},
 	camera::Camera,
-	window::{ CursorState, Event, EventsLoop, MouseButton, Window, WindowEvent },
+	window::{ Event, EventsLoop, MouseButton, MouseCursor, Window, WindowEvent },
 };
 use simplelog::{ LevelFilter, SimpleLogger };
 use std::f32::consts::PI;
@@ -89,16 +91,16 @@ fn main() {
 			Event::WindowEvent { event: WindowEvent::AxisMotion { axis, value, .. } , .. } => {
 				println!("axis {}, value {}", axis, value);
 			},
-			Event::WindowEvent { event: WindowEvent::Closed, .. } => done = true,
+			Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => done = true,
 			Event::WindowEvent { event: WindowEvent::Focused(false), .. } => {
-				window.set_cursor_state(CursorState::Normal).unwrap();
+				window.set_cursor(MouseCursor::Default);
 				controls_active = false;
 			},
 			Event::WindowEvent { event: WindowEvent::MouseInput{ button: MouseButton::Left, .. }, .. } => {
-				window.set_cursor_state(CursorState::Grab).unwrap();
+				window.set_cursor(MouseCursor::Grab);
 				controls_active = true;
 			},
-			Event::WindowEvent { event: WindowEvent::Resized(_, _), .. } => {
+			Event::WindowEvent { event: WindowEvent::Resized(_), .. } => {
 				camera.set_projection(win_width as f32 / win_height as f32, 100.0, 0.05, 1500.0).unwrap();
 			},
 			_ => (),
@@ -165,7 +167,7 @@ fn main() {
 			.unwrap();
 	}
 
-	window.set_cursor_state(CursorState::Normal).unwrap();
+	window.set_cursor(MouseCursor::Default);
 }
 
 struct Character {

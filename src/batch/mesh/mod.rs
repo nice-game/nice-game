@@ -5,19 +5,17 @@ mod render_pass;
 pub use self::mesh::Mesh;
 pub use self::shaders::{ MeshShaders, MeshShadersError };
 pub use self::render_pass::MeshRenderPass;
-use { ImageFramebuffer, ObjectId, RenderTarget, window::Window };
+use { ObjectId, RenderTarget, window::Window };
 use camera::Camera;
 use cgmath::{ vec4, Vector4 };
 use std::sync::Arc;
-use texture::TargetTexture;
 use vulkano::{
-	OomError,
 	buffer::{ BufferUsage, ImmutableBuffer },
 	command_buffer::{ AutoCommandBuffer, AutoCommandBufferBuilder, BuildError, DynamicState },
 	descriptor::{ DescriptorSet, descriptor_set::{ FixedSizeDescriptorSetsPool, PersistentDescriptorSet } },
 	device::Device,
 	format::{ ClearValue, Format },
-	framebuffer::{ Framebuffer, FramebufferAbstract, FramebufferCreationError, RenderPassAbstract },
+	framebuffer::{ Framebuffer, FramebufferCreationError },
 	image::{ AttachmentImage, ImageCreationError, ImageViewAccess },
 	memory::{ DeviceMemoryAllocError },
 	pipeline::{ GraphicsPipelineAbstract, viewport::Viewport },
@@ -175,7 +173,7 @@ impl MeshBatch {
 			.unwrap()
 			.draw(
 				self.render_pass.pipeline_history.clone(),
-				dynamic_state.clone(),
+				&dynamic_state,
 				vec![self.render_pass.shaders.target_vertices.clone()],
 				(
 					history_desc,
@@ -196,7 +194,7 @@ impl MeshBatch {
 			.unwrap()
 			.draw(
 				self.render_pass.pipeline_target.clone(),
-				dynamic_state,
+				&dynamic_state,
 				vec![self.render_pass.shaders.target_vertices.clone()],
 				self.gbuffers.target_descs[history_index].clone(),
 				()
