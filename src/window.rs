@@ -1,4 +1,4 @@
-pub use winit::{ Event, MouseButton, WindowEvent, WindowId, dpi::{ LogicalPosition, LogicalSize } };
+pub use winit::{ Event, MouseButton, MouseCursor, WindowEvent, WindowId, dpi::{ LogicalPosition, LogicalSize } };
 
 use { Context, ObjectIdRoot, RenderTarget };
 use std::{ collections::HashMap, iter::Iterator, sync::{ Arc, atomic::{ AtomicBool, Ordering } }};
@@ -205,6 +205,10 @@ impl Window {
 
 	pub fn get_inner_size(&self) -> Option<LogicalSize> {
 		self.surface.window().get_inner_size()
+	}
+
+	pub fn set_cursor(&self, cursor: MouseCursor) {
+		self.surface.window().set_cursor(cursor)
 	}
 
 	pub fn set_cursor_position(&self, pos: LogicalPosition) -> Result<(), String> {

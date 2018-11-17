@@ -35,7 +35,7 @@ fn main() {
 	let target = TargetTexture::new(&window, [400, 400]).unwrap();
 
 	let (texture, texture_future) =
-		block_on(ImmutableTexture::from_file_with_format(&window, "examples/assets/colors.png", ImageFormat::PNG))
+		block_on(ImmutableTexture::from_file_with_format(&window, "examples/assets/colors.png", ImageFormat::PNG, true))
 			.unwrap();
 
 	let (texture_sprite, texture_sprite_future) =
@@ -43,14 +43,14 @@ fn main() {
 
 	let (mut target_sprite_batch, target_sprite_batch_future) =
 		SpriteBatch::new(&window, &target, sprite_batch_shared.clone()).unwrap();
-	target_sprite_batch.add_sprite(texture_sprite);
+	target_sprite_batch.add_sprite(Box::new(texture_sprite));
 
 	let (target_sprite, target_sprite_future) =
 		Sprite::new(&window, &sprite_batch_shared, &target, [10.0, 10.0]).unwrap();
 
 	let (mut window_sprite_batch, window_sprite_batch_future) =
 		SpriteBatch::new(&window, &window, sprite_batch_shared).unwrap();
-	window_sprite_batch.add_sprite(target_sprite);
+	window_sprite_batch.add_sprite(Box::new(target_sprite));
 
 	window.join_future(
 		shaders_future.join(texture_future)
@@ -63,7 +63,7 @@ fn main() {
 	loop {
 		let mut done = false;
 		events.poll_events(|event| match event {
-			Event::WindowEvent { event: WindowEvent::Closed, .. } => done = true,
+			Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => done = true,
 			_ => (),
 		});
 
