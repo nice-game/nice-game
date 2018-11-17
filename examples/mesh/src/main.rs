@@ -14,7 +14,6 @@ use nice_game::{
 	Version,
 	batch::{
 		mesh::{ Mesh, MeshBatch, MeshShaders, MeshRenderPass },
-		sprite::Font,
 	},
 	camera::Camera,
 	window::{ CursorState, Event, EventsLoop, MouseButton, Window, WindowEvent },
@@ -24,8 +23,6 @@ use std::f32::consts::PI;
 
 fn main() {
 	SimpleLogger::init(LevelFilter::Debug, simplelog::Config::default()).unwrap();
-
-	Font::from_file("examples/assets/DroidSans.ttf").unwrap();
 
 	let mut events = EventsLoop::new();
 

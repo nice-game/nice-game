@@ -22,13 +22,13 @@ use vulkano::{
 	image::ImageViewAccess,
 	instance::QueueFamily,
 	memory::DeviceMemoryAllocError,
-	pipeline::{ GraphicsPipelineAbstract, viewport::Viewport },
+	pipeline::viewport::Viewport,
 	sync::GpuFuture,
 };
 
 pub struct SpriteBatch {
 	shared: Arc<SpriteBatchShared>,
-	sprites: Vec<Sprite>,
+	sprites: Vec<Box<Drawable2D>>,
 	framebuffers: Vec<ImageFramebuffer>,
 	target_id: ObjectId,
 	target_desc: Arc<DescriptorSet + Send + Sync + 'static>,
@@ -74,7 +74,7 @@ impl SpriteBatch {
 		))
 	}
 
-	pub fn add_sprite(&mut self, sprite: Sprite) {
+	pub fn add_sprite(&mut self, sprite: Box<Drawable2D>) {
 		self.sprites.push(sprite);
 	}
 
@@ -166,6 +166,16 @@ impl SpriteBatch {
 	}
 }
 
+pub trait Drawable2D {
+	fn make_commands(
+		&mut self,
+		shared: &SpriteBatchShared,
+		target_desc: &Arc<DescriptorSet + Send + Sync + 'static>,
+		queue_family: QueueFamily,
+		dimensions: [f32; 2],
+	) -> Result<AutoCommandBuffer, OomError>;
+}
+
 pub struct Sprite {
 	static_desc: Arc<DescriptorSet + Send + Sync + 'static>,
 	position: Arc<ImmutableBuffer<[f32; 2]>>,
@@ -195,7 +205,8 @@ impl Sprite {
 			future
 		))
 	}
-
+}
+impl Drawable2D for Sprite {
 	fn make_commands(
 		&mut self,
 		shared: &SpriteBatchShared,

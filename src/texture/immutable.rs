@@ -13,6 +13,7 @@ use vulkano::{
 };
 use window::Window;
 
+#[derive(Clone)]
 pub struct ImmutableTexture {
 	image: Arc<ImageViewAccess + Send + Sync + 'static>,
 }
@@ -54,6 +55,10 @@ impl ImmutableTexture {
 
 				Ok((ImmutableTexture { image: img }, future))
 			}))
+	}
+
+	pub(crate) fn from_image(image: Arc<ImageViewAccess + Send + Sync + 'static>) -> Self {
+		Self { image: image }
 	}
 }
 impl Texture for ImmutableTexture {
