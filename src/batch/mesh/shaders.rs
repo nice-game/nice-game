@@ -125,10 +125,9 @@ impl From<SamplerCreationError> for MeshShadersError {
 }
 
 mod vs_gbuffers {
-	#[allow(dead_code)]
-	#[derive(VulkanoShader)]
-	#[ty = "vertex"]
-	#[src = "#version 450
+	::vulkano_shaders::shader!{
+		ty: "vertex",
+		src: "#version 450
 layout(location = 0) in vec3 position_os;
 layout(location = 1) in vec3 normal_os;
 layout(location = 2) in vec2 texcoord;
@@ -178,15 +177,15 @@ void main() {
 	out_base_albedo = base_albedo;
 	out_texcoord = texcoord;
 	gl_Position = perspective(camera_proj, out_position_cs);
-}"]
-	struct Dummy;
+}
+"
+	}
 }
 
 mod fs_gbuffers {
-	#[allow(dead_code)]
-	#[derive(VulkanoShader)]
-	#[ty = "fragment"]
-	#[src = "#version 450
+	::vulkano_shaders::shader!{
+		ty: "fragment",
+		src: "#version 450
 layout(location = 0) in vec3 position_cs;
 layout(location = 1) in vec3 normal_cs;
 layout(location = 2) in vec2 texcoord;
@@ -221,29 +220,28 @@ void main() {
 	albedo.rgb = mix(base_albedo, albedo.rgb, albedo.a);
 	out_albedo = vec4(sqrt(albedo.rgb), 0);
 	out_normal_cs = vec4(normalize(normal_cs), 1);
-}"]
-	struct Dummy;
+}
+"
+	}
 }
 
 mod vs_history {
-	#[allow(dead_code)]
-	#[derive(VulkanoShader)]
-	#[ty = "vertex"]
-	#[src = "#version 450
+	::vulkano_shaders::shader!{
+		ty: "vertex",
+		src: "#version 450
 layout(location = 0) in vec2 position;
 
 void main() {
 	gl_Position = vec4(position * 2 - 1, 0.0, 1.0);
 }
-"]
-	struct Dummy;
+"
+	}
 }
 
 mod fs_history {
-	#[allow(dead_code)]
-	#[derive(VulkanoShader)]
-	#[ty = "fragment"]
-	#[src = "#version 450
+	::vulkano_shaders::shader!{
+		ty: "fragment",
+		src: "#version 450
 layout(location = 0) out vec4 out_color;
 
 layout(set = 0, binding = 0) uniform Resolution { vec4 resolution; };
@@ -298,29 +296,27 @@ void main() {
 	vec3 out_tonemapped = out_hdr / (1 + out_hdr);
 	out_color = vec4(out_tonemapped, 1);
 }
-"]
-	struct Dummy;
+"
+	}
 }
 
 mod vs_target {
-	#[allow(dead_code)]
-	#[derive(VulkanoShader)]
-	#[ty = "vertex"]
-	#[src = "#version 450
+	::vulkano_shaders::shader!{
+		ty: "vertex",
+		src: "#version 450
 layout(location = 0) in vec2 position;
 
 void main() {
 	gl_Position = vec4(position * 2 - 1, 0.0, 1.0);
 }
-"]
-	struct Dummy;
+"
+	}
 }
 
 mod fs_target {
-	#[allow(dead_code)]
-	#[derive(VulkanoShader)]
-	#[ty = "fragment"]
-	#[src = "#version 450
+	::vulkano_shaders::shader!{
+		ty: "fragment",
+		src: "#version 450
 layout(location = 0) out vec4 out_color;
 
 layout(set = 0, binding = 0, input_attachment_index = 0) uniform subpassInput color;
@@ -328,6 +324,6 @@ layout(set = 0, binding = 0, input_attachment_index = 0) uniform subpassInput co
 void main() {
 	out_color = subpassLoad(color);
 }
-"]
-	struct Dummy;
+"
+	}
 }

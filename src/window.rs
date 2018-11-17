@@ -3,10 +3,10 @@ pub use winit::{ Event, MouseButton, MouseCursor, WindowEvent, WindowId, dpi::{ 
 use { Context, ObjectIdRoot, RenderTarget };
 use std::{ collections::HashMap, iter::Iterator, sync::{ Arc, atomic::{ AtomicBool, Ordering } }};
 use vulkano::{
-	device::{ Device, DeviceExtensions, Queue },
+	device::{ Device, DeviceExtensions, Features, Queue },
 	format::Format,
 	image::ImageViewAccess,
-	instance::{ Features, PhysicalDevice },
+	instance::PhysicalDevice,
 	memory::DeviceMemoryAllocError,
 	swapchain::{
 		acquire_next_image,

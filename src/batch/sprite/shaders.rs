@@ -105,11 +105,9 @@ pub(crate) struct SpriteVertex { position: [f32; 2] }
 impl_vertex!(SpriteVertex, position);
 
 mod vs {
-	#[allow(dead_code)]
-	#[derive(VulkanoShader)]
-	#[ty = "vertex"]
-	#[src = "#version 450
-
+	::vulkano_shaders::shader!{
+		ty: "vertex",
+		src: "#version 450
 layout(location = 0) in vec2 position;
 layout(location = 0) out vec2 tex_coords;
 
@@ -127,16 +125,14 @@ void main() {
 	tex_coords = position;
 	gl_Position = vec4(2 * (sprite_dynamic.pos + textureSize(tex, 0) * position) / target.size - 1, 0.0, 1.0);
 }
-"]
-	struct Dummy;
+"
+	}
 }
 
 mod fs {
-	#[allow(dead_code)]
-	#[derive(VulkanoShader)]
-	#[ty = "fragment"]
-	#[src = "#version 450
-
+	::vulkano_shaders::shader!{
+		ty: "fragment",
+		src: "#version 450
 layout(location = 0) in vec2 tex_coords;
 layout(location = 0) out vec4 f_color;
 
@@ -145,6 +141,6 @@ layout(set = 2, binding = 0) uniform sampler2D tex;
 void main() {
 	f_color = texture(tex, tex_coords);
 }
-"]
-	struct Dummy;
+"
+	}
 }
