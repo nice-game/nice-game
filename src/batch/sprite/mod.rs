@@ -43,7 +43,7 @@ impl SpriteBatch {
 		let (target_descs, future) =
 			Self::make_target_desc(
 				window.queue().clone(),
-				shared.pipeline().clone(),
+				shared.pipeline_sprite().clone(),
 				dimensions.width(),
 				dimensions.height()
 			)?;
@@ -129,7 +129,7 @@ impl SpriteBatch {
 				let (target_desc, future) =
 					Self::make_target_desc(
 						window.queue().clone(),
-						self.shared.pipeline().clone(),
+						self.shared.pipeline_sprite().clone(),
 						framebuffer.width(),
 						framebuffer.height()
 					)?;
@@ -194,8 +194,8 @@ impl Sprite {
 			Self {
 				static_desc:
 					Arc::new(
-						PersistentDescriptorSet::start(shared.pipeline().clone(), 2)
-							.add_sampled_image(texture.image().clone(), shared.shaders().sampler().clone())
+						PersistentDescriptorSet::start(shared.pipeline_sprite().clone(), 2)
+							.add_sampled_image(texture.image().clone(), shared.shaders().sprite_sampler().clone())
 							.unwrap()
 							.build()
 							.unwrap()
@@ -217,7 +217,7 @@ impl Drawable2D for Sprite {
 		Ok(
 			AutoCommandBufferBuilder::secondary_graphics_one_time_submit(shared.shaders().device().clone(), queue_family, shared.subpass().clone())?
 				.draw(
-					shared.pipeline().clone(),
+					shared.pipeline_sprite().clone(),
 					&DynamicState {
 						line_width: None,
 						viewports:

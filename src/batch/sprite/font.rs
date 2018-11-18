@@ -16,15 +16,15 @@ use vulkano::{
 	instance::QueueFamily,
 	memory::DeviceMemoryAllocError,
 	pipeline::viewport::Viewport,
-	sync::{ now, FenceSignalFuture, FlushError, GpuFuture, NowFuture },
+	sync::{ FenceSignalFuture, FlushError, GpuFuture, JoinFuture, NowFuture },
 };
 use window::Window;
 
 pub struct Font {
 	queue: Arc<Queue>,
 	font: RtFont<'static>,
-	glyphs: HashMap<GlyphId, Option<ImmutableTexture>>,
-	futures: HashMap<GlyphId, Arc<FenceSignalFuture<CommandBufferExecFuture<NowFuture, AutoCommandBuffer>>>>,
+	glyphs: HashMap<GlyphId, Option<Glyph>>,
+	futures: HashMap<GlyphId, Arc<FenceSignalFuture<GlyphFuture>>>,
 }
 impl Font {
 	pub fn from_file<P: AsRef<Path> + Send + 'static>(window: &Window, path: P) -> Result<Self, io::Error> {
@@ -40,9 +40,9 @@ impl Font {
 		let id = self.font.glyph(ch).id();
 
 		if !self.glyphs.contains_key(&id) {
-			if let Some((image, image_future)) = self.load_impl(id)? {
-				self.glyphs.insert(id, Some(ImmutableTexture::from_image(image)));
-				self.futures.insert(id, Arc::new(image_future.then_signal_fence_and_flush().unwrap()));
+			if let Some((glpyh, glpyh_future)) = self.load_impl(id)? {
+				self.glyphs.insert(id, Some(glpyh));
+				self.futures.insert(id, Arc::new(glpyh_future.then_signal_fence_and_flush().unwrap()));
 			} else {
 				self.glyphs.insert(id, None);
 			}
@@ -64,9 +64,8 @@ impl Font {
 		text: &str,
 		shared: &SpriteBatchShared,
 		[x, y]: [f32; 2],
-	) -> Result<(TextSprite, impl GpuFuture), DeviceMemoryAllocError> {
+	) -> Result<TextSprite, DeviceMemoryAllocError> {
 		let mut positions = vec![];
-		let mut future: Box<GpuFuture> = Box::new(now(self.queue.device().clone()));
 
 		let mut static_descs = HashMap::new();
 		let mut glyph_futures = HashMap::new();
@@ -77,14 +76,15 @@ impl Font {
 			let point = glyph.position();
 			let (position, pos_future) =
 				ImmutableBuffer::from_data([point.x, point.y], BufferUsage::uniform_buffer(), self.queue.clone())?;
-			positions.push((id, position));
-			future = Box::new(future.join(pos_future));
+			positions.push((id, position, Some(pos_future.then_signal_fence_and_flush().unwrap())));
 
-			if let Some(tex) = self.glyphs.get(&id).unwrap() {
+			if let Some(glyph) = self.glyphs.get(&id).unwrap() {
 				static_descs.entry(id)
 					.or_insert_with(|| Arc::new(
-						PersistentDescriptorSet::start(shared.pipeline().clone(), 2)
-							.add_sampled_image(tex.image().clone(), shared.shaders().sampler().clone())
+						PersistentDescriptorSet::start(shared.pipeline_text().clone(), 2)
+							.add_buffer(glyph.offset.clone())
+							.unwrap()
+							.add_sampled_image(glyph.texture.image().clone(), shared.shaders().text_sampler().clone())
 							.unwrap()
 							.build()
 							.unwrap()
@@ -96,20 +96,13 @@ impl Font {
 			}
 		}
 
-		Ok((TextSprite { static_descs: static_descs, positions: positions, futures: glyph_futures }, future))
+		Ok(TextSprite { static_descs: static_descs, positions: positions, futures: glyph_futures })
 	}
 
-	fn load_impl(
-		&mut self,
-		id: GlyphId
-	) -> Result<
-		Option<(Arc<ImmutableImage<Format>>, CommandBufferExecFuture<NowFuture, AutoCommandBuffer>)>,
-		DeviceMemoryAllocError
-	> {
+	fn load_impl(&mut self, id: GlyphId) -> Result<Option<(Glyph, GlyphFuture)>, DeviceMemoryAllocError> {
 		let glyph = self.font.glyph(id).scaled(Scale::uniform(32.0)).positioned(Point { x: 0.0, y: 0.0 });
 
 		if let Some(bb) = glyph.pixel_bounding_box() {
-			println!("'{:?}' {}, {}", id, bb.width(), bb.height());
 			let bblen = bb.width() as usize * bb.height() as usize;
 			let mut pixels = Vec::with_capacity(bblen);
 			unsafe { pixels.set_len(bblen); }
@@ -117,6 +110,9 @@ impl Font {
 			glyph.draw(|x, y, v| {
 				pixels[y as usize * bb.width() as usize + x as usize] = (255.0 * v) as u8;
 			});
+
+			let (position, pos_future) =
+				ImmutableBuffer::from_data([bb.min.x, bb.min.y], BufferUsage::uniform_buffer(), self.queue.clone())?;
 
 			let (image, image_future) =
 				ImmutableImage
@@ -131,24 +127,23 @@ impl Font {
 						_ => unreachable!(),
 					})?;
 
-			println!("{:?}", image);
-
-			Ok(Some((image, image_future)))
+			Ok(Some((
+				Glyph { texture: ImmutableTexture::from_image(image), offset: position }, pos_future.join(image_future)
+			)))
 		} else {
 			Ok(None)
 		}
 	}
 }
 
-#[derive(Clone)]
-pub(super) struct Glyph {
-	image: Arc<ImmutableImage<Format>>,
-}
-
 pub struct TextSprite {
 	static_descs: HashMap<GlyphId, Arc<DescriptorSet + Send + Sync + 'static>>,
-	positions: Vec<(GlyphId, Arc<ImmutableBuffer<[f32; 2]>>)>,
-	futures: HashMap<GlyphId, Arc<FenceSignalFuture<CommandBufferExecFuture<NowFuture, AutoCommandBuffer>>>>,
+	positions: Vec<(
+		GlyphId,
+		Arc<ImmutableBuffer<[f32; 2]>>,
+		Option<FenceSignalFuture<CommandBufferExecFuture<NowFuture, AutoCommandBuffer>>>
+	)>,
+	futures: HashMap<GlyphId, Arc<FenceSignalFuture<GlyphFuture>>>,
 }
 impl Drawable2D for TextSprite {
 	fn make_commands(
@@ -167,35 +162,56 @@ impl Drawable2D for TextSprite {
 				scissors: None,
 			};
 
-		for (id, pos) in &self.positions {
+		for (id, pos, future) in &mut self.positions {
+			if let Some(inner) = future.take() {
+				match inner.wait(Some(Default::default())) {
+					Ok(()) => (),
+					Err(FlushError::Timeout) => { *future = Some(inner); },
+					Err(err) => panic!(err),
+				}
+			}
+
 			if let Some(future) = self.futures.get(&id).map(|f| f.clone()) {
 				match future.wait(Some(Default::default())) {
 					Ok(()) => { self.futures.remove(&id); },
 					Err(FlushError::Timeout) => { continue; },
 					Err(err) => panic!(err),
-				};
+				}
 			}
 
-			cmds = cmds
-				.draw(
-					shared.pipeline().clone(),
-					&state,
-					vec![shared.shaders().vertices().clone()],
-					(
-						target_desc.clone(),
-						shared.sprite_desc_pool().lock().unwrap()
-							.next()
-							.add_buffer(pos.clone())
-							.unwrap()
-							.build()
-							.unwrap(),
-						self.static_descs.get(id).unwrap().clone(),
-					),
-					()
-				)
-				.unwrap();
+			if let Some(static_desc) = self.static_descs.get(id) {
+				cmds = cmds
+					.draw(
+						shared.pipeline_text().clone(),
+						&state,
+						vec![shared.shaders().vertices().clone()],
+						(
+							target_desc.clone(),
+							shared.sprite_desc_pool().lock().unwrap()
+								.next()
+								.add_buffer(pos.clone())
+								.unwrap()
+								.build()
+								.unwrap(),
+							static_desc.clone(),
+						),
+						()
+					)
+					.unwrap();
+			}
 		}
 
 		Ok(cmds.build().map_err(|err| match err { BuildError::OomError(err) => err, err => unreachable!("{}", err) })?)
 	}
+}
+
+type GlyphFuture =
+	JoinFuture<
+		CommandBufferExecFuture<NowFuture, AutoCommandBuffer>,
+		CommandBufferExecFuture<NowFuture, AutoCommandBuffer>
+	>;
+
+struct Glyph {
+	texture: ImmutableTexture,
+	offset: Arc<ImmutableBuffer<[i32; 2]>>,
 }
