@@ -1,7 +1,7 @@
 mod immutable;
 mod target;
 
-pub use self::immutable::ImmutableTexture;
+pub use self::immutable::{ ImmutableTexture, TextureError };
 pub use self::target::TargetTexture;
 pub use image::ImageFormat;
 use std::sync::Arc;
