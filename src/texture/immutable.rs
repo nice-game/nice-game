@@ -6,7 +6,7 @@ use texture::Texture;
 use vulkano::{
 	OomError,
 	device::Queue,
-	format::Format,
+	format::{ AcceptsPixels, Format },
 	image::{ Dimensions, ImageCreationError, ImageViewAccess, ImmutableImage },
 	memory::DeviceMemoryAllocError,
 	sync::{ FlushError, GpuFuture },
@@ -18,12 +18,25 @@ pub struct ImmutableTexture {
 	image: Arc<ImageViewAccess + Send + Sync + 'static>,
 }
 impl ImmutableTexture {
+	pub fn from_data<I, P>(window: &Window, data: I) -> Result<(Self, impl GpuFuture), TextureError>
+	where I: ExactSizeIterator<Item = P>, P: Send + Sync + Clone + 'static, Format: AcceptsPixels<P> {
+		let (image, future) =
+			ImmutableImage::from_iter(
+				data,
+				Dimensions::Dim2d { width: 1, height: 1 },
+				Format::R8G8B8A8Unorm,
+				window.queue().clone(),
+			)?;
+
+		Ok((Self { image: image }, future))
+	}
+
 	pub fn from_file_with_format<P>(
 		window: &Window,
 		path: P,
 		format: ImageFormat,
 		srgb: bool,
-	) -> impl Future<Item = (ImmutableTexture, impl GpuFuture), Error = TextureError>
+	) -> impl Future<Item = (Self, impl GpuFuture), Error = TextureError>
 	where P: AsRef<Path> + Send + 'static {
 		Self::from_file_with_format_impl(window.queue().clone(), path, format, srgb)
 	}
@@ -33,7 +46,7 @@ impl ImmutableTexture {
 		path: P,
 		format: ImageFormat,
 		srgb: bool,
-	) -> impl Future<Item = (ImmutableTexture, impl GpuFuture), Error = TextureError>
+	) -> impl Future<Item = (Self, impl GpuFuture), Error = TextureError>
 	where P: AsRef<Path> + Send + 'static {
 		spawn_fs(|_| {
 			let mut bytes = vec![];
@@ -53,7 +66,7 @@ impl ImmutableTexture {
 						queue,
 					)?;
 
-				Ok((ImmutableTexture { image: img }, future))
+				Ok((Self { image: img }, future))
 			}))
 	}
 
