@@ -44,9 +44,9 @@ fn main() {
 		).unwrap();
 	let (sprite, sprite_future) = Sprite::new(&mut window, &sprite_batch_shared, &texture, [10.0, 42.0]).unwrap();
 
-	let mut font = Font::from_file(&window, "examples/assets/DroidSans.ttf").unwrap();
-	font.load_chars("The quick brown fox jumped over the lazy dog.".chars()).unwrap();
-	let text = font.make_sprite("The quick brown fox jumped over the lazy dog.", &sprite_batch_shared, [10.0, 32.0]).unwrap();
+	let mut font = Font::from_file(&window, "examples/assets/consola.ttf").unwrap();
+	font.load_chars("The quick brown fox jumped over the lazy dog. (╯°□°）╯︵ ┻━┻".chars()).unwrap();
+	let text = font.make_sprite("The quick brown fox jumped over the lazy dog. (╯°□°）╯︵ ┻━┻", &sprite_batch_shared, [10.0, 32.0]).unwrap();
 
 	let (mut sprite_batch, sprite_batch_future) = SpriteBatch::new(&window, &window, sprite_batch_shared.clone()).unwrap();
 	sprite_batch.add_sprite(Box::new(sprite));

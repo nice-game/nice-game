@@ -70,7 +70,7 @@ impl Font {
 		let mut static_descs = HashMap::new();
 		let mut glyph_futures = HashMap::new();
 
-		for glyph in self.font.layout(text, Scale::uniform(32.0), Point { x: x, y: y }) {
+		for glyph in self.font.layout(text, Scale::uniform(24.0), Point { x: x, y: y }) {
 			let id = glyph.id();
 
 			let point = glyph.position();
@@ -100,7 +100,7 @@ impl Font {
 	}
 
 	fn load_impl(&mut self, id: GlyphId) -> Result<Option<(Glyph, GlyphFuture)>, DeviceMemoryAllocError> {
-		let glyph = self.font.glyph(id).scaled(Scale::uniform(32.0)).positioned(Point { x: 0.0, y: 0.0 });
+		let glyph = self.font.glyph(id).scaled(Scale::uniform(24.0)).positioned(Point { x: 0.0, y: 0.0 });
 
 		if let Some(bb) = glyph.pixel_bounding_box() {
 			let bblen = bb.width() as usize * bb.height() as usize;
