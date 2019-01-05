@@ -1,8 +1,9 @@
 pub use winit::{ Event, MouseButton, MouseCursor, WindowEvent, WindowId, dpi::{ LogicalPosition, LogicalSize } };
 
-use { Context, ObjectIdRoot, RenderTarget };
+use { Context, DeviceId, ObjectIdRoot, RenderTarget };
 use std::{ collections::HashMap, iter::Iterator, sync::{ Arc, atomic::{ AtomicBool, Ordering } }};
 use vulkano::{
+	VulkanObject,
 	device::{ Device, DeviceExtensions, Features, Queue },
 	format::Format,
 	image::ImageViewAccess,
@@ -213,6 +214,10 @@ impl Window {
 
 	pub fn set_cursor_position(&self, pos: LogicalPosition) -> Result<(), String> {
 		self.surface.window().set_cursor_position(pos)
+	}
+
+	pub fn device_id(&self) -> DeviceId {
+		DeviceId { id: self.device.internal_object() }
 	}
 
 	pub(super) fn device(&self) -> &Arc<Device> {

@@ -68,6 +68,11 @@ impl ObjectId {
 	}
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct DeviceId {
+	id: usize,
+}
+
 pub struct ObjectIdRoot {
 	val: Arc<()>,
 }
