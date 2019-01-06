@@ -32,18 +32,18 @@ impl SpriteBatchShaders {
 					SpriteVertex { position: [1.0, 1.0] },
 				],
 				BufferUsage::vertex_buffer(),
-				window.queue().clone(),
+				window.device().queue().clone(),
 			)?;
 
 		Ok((
 			Arc::new(Self {
-				device: window.device().clone(),
+				device: window.device().device().clone(),
 				vertices: vertices,
-				sprite_vertex_shader: sprite_vs::Shader::load(window.device().clone())?,
-				sprite_fragment_shader: sprite_fs::Shader::load(window.device().clone())?,
+				sprite_vertex_shader: sprite_vs::Shader::load(window.device().device().clone())?,
+				sprite_fragment_shader: sprite_fs::Shader::load(window.device().device().clone())?,
 				sprite_sampler:
 					Sampler::new(
-						window.device().clone(),
+						window.device().device().clone(),
 						Filter::Linear,
 						Filter::Linear, MipmapMode::Nearest,
 						SamplerAddressMode::Repeat,
@@ -51,11 +51,11 @@ impl SpriteBatchShaders {
 						SamplerAddressMode::Repeat,
 						0.0, 1.0, 0.0, 0.0
 					)?,
-				text_vertex_shader: text_vs::Shader::load(window.device().clone())?,
-				text_fragment_shader: text_fs::Shader::load(window.device().clone())?,
+				text_vertex_shader: text_vs::Shader::load(window.device().device().clone())?,
+				text_fragment_shader: text_fs::Shader::load(window.device().device().clone())?,
 				text_sampler:
 					Sampler::new(
-						window.device().clone(),
+						window.device().device().clone(),
 						Filter::Linear,
 						Filter::Linear, MipmapMode::Nearest,
 						SamplerAddressMode::ClampToBorder(BorderColor::FloatTransparentBlack),

@@ -24,9 +24,9 @@ impl Camera {
 		znear: f32,
 		zfar: f32,
 	) -> Result<Self, DeviceMemoryAllocError> {
-		let position_pool = CpuBufferPool::uniform_buffer(window.device().clone());
-		let rotation_pool = CpuBufferPool::uniform_buffer(window.device().clone());
-		let projection_pool = CpuBufferPool::uniform_buffer(window.device().clone());
+		let position_pool = CpuBufferPool::uniform_buffer(window.device().device().clone());
+		let rotation_pool = CpuBufferPool::uniform_buffer(window.device().device().clone());
+		let projection_pool = CpuBufferPool::uniform_buffer(window.device().device().clone());
 
 		let position_buffer = position_pool.next(position)?;
 		let rotation_buffer = rotation_pool.next(rotation)?;

@@ -39,7 +39,7 @@ impl MeshShaders {
 					TargetVertex { position: [1.0, 1.0] },
 				],
 				BufferUsage::vertex_buffer(),
-				window.queue().clone(),
+				window.device().queue().clone(),
 			)?;
 
 		let (black_pixel, black_pixel_future) =
@@ -47,7 +47,7 @@ impl MeshShaders {
 					vec![(0u8, 0u8, 255u8, 0u8)].into_iter(),
 					Dimensions::Dim2d { width: 1, height: 1 },
 					Format::R8G8B8A8Unorm,
-					window.queue().clone(),
+					window.device().queue().clone(),
 				)?;
 
 		let (texture1_default, texture1_default_future) =
@@ -55,7 +55,7 @@ impl MeshShaders {
 					vec![(0u8, 0u8, 255u8, 0u8)].into_iter(),
 					Dimensions::Dim2d { width: 1, height: 1 },
 					Format::R8G8B8A8Unorm,
-					window.queue().clone(),
+					window.device().queue().clone(),
 				)?;
 
 		let (texture2_default, texture2_default_future) =
@@ -63,25 +63,25 @@ impl MeshShaders {
 					vec![(127u8, 127u8, 255u8, 0u8)].into_iter(),
 					Dimensions::Dim2d { width: 1, height: 1 },
 					Format::R8G8B8A8Unorm,
-					window.queue().clone(),
+					window.device().queue().clone(),
 				)?;
 
 		Ok((
 			Arc::new(Self {
-				queue: window.queue().clone(),
+				queue: window.device().queue().clone(),
 				target_vertices: target_vertices,
-				shader_gbuffers_vertex: vs_gbuffers::Shader::load(window.device().clone())?,
-				shader_gbuffers_fragment: fs_gbuffers::Shader::load(window.device().clone())?,
-				shader_history_vertex: vs_history::Shader::load(window.device().clone())?,
-				shader_history_fragment: fs_history::Shader::load(window.device().clone())?,
-				shader_target_vertex: vs_target::Shader::load(window.device().clone())?,
-				shader_target_fragment: fs_target::Shader::load(window.device().clone())?,
+				shader_gbuffers_vertex: vs_gbuffers::Shader::load(window.device().device().clone())?,
+				shader_gbuffers_fragment: fs_gbuffers::Shader::load(window.device().device().clone())?,
+				shader_history_vertex: vs_history::Shader::load(window.device().device().clone())?,
+				shader_history_fragment: fs_history::Shader::load(window.device().device().clone())?,
+				shader_target_vertex: vs_target::Shader::load(window.device().device().clone())?,
+				shader_target_fragment: fs_target::Shader::load(window.device().device().clone())?,
 				black_pixel: black_pixel,
 				texture1_default: texture1_default,
 				texture2_default: texture2_default,
 				sampler:
 					Sampler::new(
-						window.device().clone(),
+						window.device().device().clone(),
 						Filter::Linear,
 						Filter::Linear, MipmapMode::Nearest,
 						SamplerAddressMode::Repeat,

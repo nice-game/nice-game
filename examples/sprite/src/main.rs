@@ -7,7 +7,7 @@ use nice_game::{
 	GpuFuture,
 	RenderTarget,
 	Version,
-	batch::sprite::{ Font, Sprite, SpriteBatch, SpriteBatchShaders, SpriteBatchShared },
+	batch::sprite::{ Sprite, SpriteBatch, SpriteBatchShaders, SpriteBatchShared },
 	texture::{ ImageFormat, ImmutableTexture },
 	window::{ Event, EventsLoop, Window, WindowEvent },
 };
@@ -17,7 +17,7 @@ fn main() {
 
 	let mut window =
 		Window::new(
-			&Context::new(
+			&mut Context::new(
 				Some("Triangle Example"),
 				Some(Version {
 					major: env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap(),
@@ -44,9 +44,9 @@ fn main() {
 		).unwrap();
 	let (sprite, sprite_future) = Sprite::new(&mut window, &sprite_batch_shared, &texture, [10.0, 42.0]).unwrap();
 
-	let mut font = Font::from_file(&window, "examples/assets/consola.ttf").unwrap();
-	font.load_chars("The quick brown fox jumped over the lazy dog. (╯°□°）╯︵ ┻━┻".chars()).unwrap();
-	let text = font.make_sprite("The quick brown fox jumped over the lazy dog. (╯°□°）╯︵ ┻━┻", &sprite_batch_shared, [10.0, 32.0]).unwrap();
+	let text = window.device().get_font("examples/assets/consola.ttf").unwrap()
+		.make_sprite("The quick brown fox jumped over the lazy dog. (╯°□°）╯︵ ┻━┻", &sprite_batch_shared, [10.0, 32.0])
+		.unwrap();
 
 	let (mut sprite_batch, sprite_batch_future) = SpriteBatch::new(&window, &window, sprite_batch_shared.clone()).unwrap();
 	sprite_batch.add_sprite(Box::new(sprite));
@@ -72,7 +72,7 @@ fn main() {
 					future = Box::new(future.join(commands_future));
 				}
 
-				future.then_execute(window.queue().clone(), commands).unwrap()
+				future.then_execute(window.device().queue().clone(), commands).unwrap()
 			})
 			.unwrap();
 	}

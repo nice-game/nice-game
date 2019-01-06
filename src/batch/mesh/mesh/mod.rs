@@ -42,8 +42,8 @@ impl Mesh {
 		rotation: Quaternion<f32>,
 	) -> impl Future<Item = (Self, impl GpuFuture + Send + Sync + 'static), Error = MeshFromFileError>
 	{
-		let device = window.device().clone();
-		let queue = window.queue().clone();
+		let device = window.device().device().clone();
+		let queue = window.device().queue().clone();
 		spawn_fs(move |_| codec::from_nice_model(device, queue, render_pass, path, position, rotation))
 	}
 

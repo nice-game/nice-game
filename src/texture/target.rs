@@ -14,7 +14,7 @@ pub struct TargetTexture {
 }
 impl TargetTexture {
 	pub fn new(window: &Window, dimensions: [u32; 2]) -> Result<Self, DeviceMemoryAllocError> {
-		AttachmentImage::sampled(window.device().clone(), dimensions, window.format())
+		AttachmentImage::sampled(window.device().device().clone(), dimensions, window.format())
 			.map(|image| Self { image: [image], id_root: ObjectIdRoot::new() })
 			.map_err(|err| match err { ImageCreationError::AllocError(err) => err, _ => unreachable!() })
 	}

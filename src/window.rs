@@ -1,13 +1,11 @@
 pub use winit::{ Event, MouseButton, MouseCursor, WindowEvent, WindowId, dpi::{ LogicalPosition, LogicalSize } };
 
-use { Context, DeviceId, ObjectIdRoot, RenderTarget };
+use { Context, ObjectIdRoot, RenderTarget };
+use device::DeviceCtx;
 use std::{ collections::HashMap, iter::Iterator, sync::{ Arc, atomic::{ AtomicBool, Ordering } }};
 use vulkano::{
-	VulkanObject,
-	device::{ Device, DeviceExtensions, Features, Queue },
 	format::Format,
 	image::ImageViewAccess,
-	instance::PhysicalDevice,
 	memory::DeviceMemoryAllocError,
 	swapchain::{
 		acquire_next_image,
@@ -52,8 +50,7 @@ impl EventsLoop {
 
 pub struct Window {
 	surface: Arc<Surface<winit::Window>>,
-	device: Arc<Device>,
-	queue: Arc<Queue>,
+	device: Arc<DeviceCtx>,
 	swapchain: Arc<Swapchain<winit::Window>>,
 	images: Vec<Arc<ImageViewAccess + Send + Sync + 'static>>,
 	previous_frame_end: Option<Box<GpuFuture>>,
@@ -61,33 +58,18 @@ pub struct Window {
 	id_root: ObjectIdRoot,
 }
 impl Window {
-	pub fn new<T: Into<String>>(ctx: &Context, events: &mut EventsLoop, title: T) -> Self {
-		let pdevice = PhysicalDevice::enumerate(&ctx.instance).next().expect("no device available");
-		info!("Using device: {} ({:?})", pdevice.name(), pdevice.ty());
-
+	pub fn new<T: Into<String>>(ctx: &mut Context, events: &mut EventsLoop, title: T) -> Self {
 		let surface = winit::WindowBuilder::new()
 			.with_title(title)
 			.build_vk_surface(&events.events, ctx.instance.clone())
 			.expect("failed to create window");
 
-		let qfam = pdevice.queue_families()
-			.find(|&q| q.supports_graphics() && surface.is_supported(q).unwrap())
-			.expect("failed to find a graphical queue family");
-
-		let (device, mut queues) =
-			Device::new(
-				pdevice,
-				&Features::none(),
-				&DeviceExtensions { khr_swapchain: true, .. DeviceExtensions::none() },
-				[(qfam, 1.0)].iter().cloned()
-			)
-			.expect("failed to create device");
-		let queue = queues.next().unwrap();
+		let device = ctx.get_device_for_surface(&surface);
 
 		let (swapchain, images) = {
-			let caps = surface.capabilities(pdevice).expect("failed to get surface capabilities");
+			let caps = surface.capabilities(device.device().physical_device()).expect("failed to get surface capabilities");
 			Swapchain::new(
-				device.clone(),
+				device.device().clone(),
 				surface.clone(),
 				caps.min_image_count,
 				Format::B8G8R8A8Srgb,
@@ -103,7 +85,7 @@ impl Window {
 					),
 				1,
 				caps.supported_usage_flags,
-				&queue,
+				device.queue(),
 				SurfaceTransform::Identity,
 				caps.supported_composite_alpha.iter().next().unwrap(),
 				PresentMode::Fifo,
@@ -119,7 +101,6 @@ impl Window {
 		Self {
 			surface: surface,
 			device: device,
-			queue: queue,
 			swapchain: swapchain,
 			images: images,
 			previous_frame_end: None,
@@ -144,7 +125,7 @@ impl Window {
 		F: GpuFuture + 'static
 	{
 		if self.resized.swap(false, Ordering::Relaxed) {
-			let dimensions = self.surface.capabilities(self.device.physical_device())
+			let dimensions = self.surface.capabilities(self.device.device().physical_device())
 				.expect("failed to get surface capabilities")
 				.current_extent
 				.unwrap_or(
@@ -189,7 +170,7 @@ impl Window {
 				Box::new(acquire_future)
 			};
 		future = Box::new(get_commands(self, image_num, future));
-		let future = future.then_swapchain_present(self.queue.clone(), self.swapchain.clone(), image_num)
+		let future = future.then_swapchain_present(self.device.queue().clone(), self.swapchain.clone(), image_num)
 			.then_signal_fence_and_flush();
 		self.previous_frame_end =
 			match future {
@@ -216,16 +197,8 @@ impl Window {
 		self.surface.window().set_cursor_position(pos)
 	}
 
-	pub fn device_id(&self) -> DeviceId {
-		DeviceId { id: self.device.internal_object() }
-	}
-
-	pub(super) fn device(&self) -> &Arc<Device> {
+	pub fn device(&self) -> &Arc<DeviceCtx> {
 		&self.device
-	}
-
-	pub fn queue(&self) -> &Arc<Queue> {
-		&self.queue
 	}
 }
 impl RenderTarget for Window {

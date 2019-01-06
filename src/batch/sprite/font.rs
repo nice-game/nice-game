@@ -1,6 +1,6 @@
 use batch::sprite::{ Drawable2D, SpriteBatchShared };
 use rusttype::{ Font as RtFont, GlyphId, Point, Scale };
-use std::{ collections::HashMap, fs::File, io::{ self, prelude::* }, path::Path, sync::Arc };
+use std::{ collections::HashMap, fs::File, io::{ self, prelude::* }, path::Path, sync::{ Arc, Mutex } };
 use texture::{ Texture, ImmutableTexture };
 use vulkano::{
 	OomError,
@@ -18,45 +18,21 @@ use vulkano::{
 	pipeline::viewport::Viewport,
 	sync::{ FenceSignalFuture, FlushError, GpuFuture, JoinFuture, NowFuture },
 };
-use window::Window;
 
 pub struct Font {
 	queue: Arc<Queue>,
 	font: RtFont<'static>,
-	glyphs: HashMap<GlyphId, Option<Glyph>>,
-	futures: HashMap<GlyphId, Arc<FenceSignalFuture<GlyphFuture>>>,
+	glyphs: Mutex<HashMap<GlyphId, Option<Glyph>>>,
+	futures: Mutex<HashMap<GlyphId, Arc<FenceSignalFuture<GlyphFuture>>>>,
 }
 impl Font {
-	pub fn from_file<P: AsRef<Path> + Send + 'static>(window: &Window, path: P) -> Result<Self, io::Error> {
+	pub(crate) fn from_file<P: AsRef<Path>>(queue: Arc<Queue>, path: P) -> Result<Arc<Self>, io::Error> {
 		let mut bytes = vec![];
 		File::open(path)?.read_to_end(&mut bytes)?;
 
 		let font = RtFont::from_bytes(bytes).unwrap();
 
-		Ok(Self { queue: window.queue().clone(), font: font, glyphs: HashMap::new(), futures: HashMap::new() })
-	}
-
-	pub fn load(&mut self, ch: char) -> Result<(), DeviceMemoryAllocError> {
-		let id = self.font.glyph(ch).id();
-
-		if !self.glyphs.contains_key(&id) {
-			if let Some((glpyh, glpyh_future)) = self.load_impl(id)? {
-				self.glyphs.insert(id, Some(glpyh));
-				self.futures.insert(id, Arc::new(glpyh_future.then_signal_fence_and_flush().unwrap()));
-			} else {
-				self.glyphs.insert(id, None);
-			}
-		}
-
-		Ok(())
-	}
-
-	pub fn load_chars(&mut self, chars: impl Iterator<Item = char>) -> Result<(), DeviceMemoryAllocError> {
-		for ch in chars {
-			self.load(ch)?;
-		}
-
-		Ok(())
+		Ok(Arc::new(Self { queue: queue, font: font, glyphs: Mutex::default(), futures: Mutex::default() }))
 	}
 
 	pub fn make_sprite(
@@ -65,10 +41,14 @@ impl Font {
 		shared: &SpriteBatchShared,
 		[x, y]: [f32; 2],
 	) -> Result<TextSprite, DeviceMemoryAllocError> {
+		self.load_chars(text.chars())?;
+
 		let mut positions = vec![];
 
 		let mut static_descs = HashMap::new();
 		let mut glyph_futures = HashMap::new();
+		let glyphs = self.glyphs.lock().unwrap();
+		let futures = self.futures.lock().unwrap();
 
 		for glyph in self.font.layout(text, Scale::uniform(24.0), Point { x: x, y: y }) {
 			let id = glyph.id();
@@ -78,7 +58,7 @@ impl Font {
 				ImmutableBuffer::from_data([point.x, point.y], BufferUsage::uniform_buffer(), self.queue.clone())?;
 			positions.push((id, position, Some(pos_future.then_signal_fence_and_flush().unwrap())));
 
-			if let Some(glyph) = self.glyphs.get(&id).unwrap() {
+			if let Some(glyph) = glyphs.get(&id).unwrap() {
 				static_descs.entry(id)
 					.or_insert_with(|| Arc::new(
 						PersistentDescriptorSet::start(shared.pipeline_text().clone(), 2)
@@ -90,7 +70,7 @@ impl Font {
 							.unwrap()
 					) as Arc<DescriptorSet + Send + Sync + 'static>);
 
-				if let Some(fut) = self.futures.get(&id) {
+				if let Some(fut) = futures.get(&id) {
 					glyph_futures.insert(id, fut.clone());
 				}
 			}
@@ -99,40 +79,50 @@ impl Font {
 		Ok(TextSprite { static_descs: static_descs, positions: positions, futures: glyph_futures })
 	}
 
-	fn load_impl(&mut self, id: GlyphId) -> Result<Option<(Glyph, GlyphFuture)>, DeviceMemoryAllocError> {
-		let glyph = self.font.glyph(id).scaled(Scale::uniform(24.0)).positioned(Point { x: 0.0, y: 0.0 });
+	fn load_chars(&self, chars: impl Iterator<Item = char>) -> Result<(), DeviceMemoryAllocError> {
+		let mut glyphs = self.glyphs.lock().unwrap();
+		let mut futures = self.futures.lock().unwrap();
 
-		if let Some(bb) = glyph.pixel_bounding_box() {
-			let bblen = bb.width() as usize * bb.height() as usize;
-			let mut pixels = Vec::with_capacity(bblen);
-			unsafe { pixels.set_len(bblen); }
+		for ch in chars {
+			let id = self.font.glyph(ch).id();
 
-			glyph.draw(|x, y, v| {
-				pixels[y as usize * bb.width() as usize + x as usize] = (255.0 * v) as u8;
-			});
+			if !glyphs.contains_key(&id) {
+				let glyph = self.font.glyph(id).scaled(Scale::uniform(24.0)).positioned(Point { x: 0.0, y: 0.0 });
 
-			let (position, pos_future) =
-				ImmutableBuffer::from_data([bb.min.x, bb.min.y], BufferUsage::uniform_buffer(), self.queue.clone())?;
+				if let Some(bb) = glyph.pixel_bounding_box() {
+					let bblen = bb.width() as usize * bb.height() as usize;
+					let mut pixels = Vec::with_capacity(bblen);
+					unsafe { pixels.set_len(bblen); }
 
-			let (image, image_future) =
-				ImmutableImage
-					::from_iter(
-						pixels.into_iter(),
-						Dimensions::Dim2d { width: bb.width() as u32, height: bb.height() as u32 },
-						Format::R8Unorm,
-						self.queue.clone(),
-					)
-					.map_err(|err| match err {
-						ImageCreationError::AllocError(err) => err,
-						_ => unreachable!(),
-					})?;
+					glyph.draw(|x, y, v| {
+						pixels[y as usize * bb.width() as usize + x as usize] = (255.0 * v) as u8;
+					});
 
-			Ok(Some((
-				Glyph { texture: ImmutableTexture::from_image(image), offset: position }, pos_future.join(image_future)
-			)))
-		} else {
-			Ok(None)
+					let (position, pos_future) =
+						ImmutableBuffer::from_data([bb.min.x, bb.min.y], BufferUsage::uniform_buffer(), self.queue.clone())?;
+
+					let (image, image_future) =
+						ImmutableImage
+							::from_iter(
+								pixels.into_iter(),
+								Dimensions::Dim2d { width: bb.width() as u32, height: bb.height() as u32 },
+								Format::R8Unorm,
+								self.queue.clone(),
+							)
+							.map_err(|err| match err {
+								ImageCreationError::AllocError(err) => err,
+								_ => unreachable!(),
+							})?;
+
+					glyphs.insert(id, Some(Glyph { texture: ImmutableTexture::from_image(image), offset: position }));
+					futures.insert(id, Arc::new(pos_future.join(image_future).then_signal_fence_and_flush().unwrap()));
+				} else {
+					glyphs.insert(id, None);
+				}
+			}
 		}
+
+		Ok(())
 	}
 }
 

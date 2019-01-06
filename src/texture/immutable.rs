@@ -25,7 +25,7 @@ impl ImmutableTexture {
 				data,
 				Dimensions::Dim2d { width: 1, height: 1 },
 				Format::R8G8B8A8Unorm,
-				window.queue().clone(),
+				window.device().queue().clone(),
 			)?;
 
 		Ok((Self { image: image }, future))
@@ -38,7 +38,7 @@ impl ImmutableTexture {
 		srgb: bool,
 	) -> impl Future<Item = (Self, impl GpuFuture), Error = TextureError>
 	where P: AsRef<Path> + Send + 'static {
-		Self::from_file_with_format_impl(window.queue().clone(), path, format, srgb)
+		Self::from_file_with_format_impl(window.device().queue().clone(), path, format, srgb)
 	}
 
 	pub(crate) fn from_file_with_format_impl<P>(

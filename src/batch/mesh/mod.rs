@@ -104,7 +104,7 @@ impl MeshBatch {
 			AutoCommandBufferBuilder
 				::primary_one_time_submit(
 					self.render_pass.shaders.target_vertices.device().clone(),
-					window.queue().family()
+					window.device().queue().family()
 				)?
 				.begin_render_pass(
 					Arc::new(
@@ -134,7 +134,7 @@ impl MeshBatch {
 								&self.render_pass,
 								camera_desc_gbuffers.clone(),
 								&mut self.mesh_desc_pool,
-								window.queue().family(),
+								window.device().queue().family(),
 								dimensions
 							)?
 						)
