@@ -9,25 +9,22 @@ use nice_game::{
 	Version,
 	batch::sprite::{ Sprite, SpriteBatch, SpriteBatchShaders, SpriteBatchShared },
 	texture::{ ImageFormat, ImmutableTexture },
-	window::{ Event, EventsLoop, Window, WindowEvent },
+	window::{ Event, WindowEvent },
 };
 
 fn main() {
-	let mut events = EventsLoop::new();
+	let mut ctx =
+		Context::new(
+			Some("Triangle Example"),
+			Some(Version {
+				major: env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap(),
+				minor: env!("CARGO_PKG_VERSION_MINOR").parse().unwrap(),
+				patch: env!("CARGO_PKG_VERSION_PATCH").parse().unwrap(),
+			}),
+		)
+		.unwrap();
 
-	let mut window =
-		Window::new(
-			&mut Context::new(
-				Some("Triangle Example"),
-				Some(Version {
-					major: env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap(),
-					minor: env!("CARGO_PKG_VERSION_MINOR").parse().unwrap(),
-					patch: env!("CARGO_PKG_VERSION_PATCH").parse().unwrap(),
-				}),
-			).unwrap(),
-			&mut events,
-			"nIce Game"
-		);
+	let mut window = ctx.create_window("nIce Game");
 
 	let (shaders, shaders_future) = SpriteBatchShaders::new(&mut window).unwrap();
 
@@ -56,7 +53,7 @@ fn main() {
 
 	loop {
 		let mut done = false;
-		events.poll_events(|event| match event {
+		ctx.poll_events(|event| match event {
 			Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => done = true,
 			_ => (),
 		});

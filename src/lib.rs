@@ -27,7 +27,7 @@ pub mod window;
 pub use vulkano::{ command_buffer::CommandBuffer, instance::Version, sync::GpuFuture };
 
 use device::DeviceCtx;
-use std::sync::{ Arc, Weak };
+use std::{ collections::HashMap, sync::{ Arc, Weak, atomic::{ AtomicBool, Ordering } } };
 use vulkano::{
 	device::{ Device, DeviceExtensions, Features },
 	format::Format,
@@ -36,15 +36,20 @@ use vulkano::{
 	instance::{ ApplicationInfo, Instance, InstanceCreationError, PhysicalDevice },
 	swapchain::Surface,
 };
+use vulkano_win::VkSurfaceBuild;
+use window::Window;
+use winit::{ Event, WindowEvent, WindowId };
 
 /// Root struct for this library. Any windows that are created using the same context will share some resources.
 pub struct Context {
+	events: EventsLoop,
 	instance: Arc<Instance>,
 	devices: Vec<Arc<DeviceCtx>>,
 }
 impl Context {
 	pub fn new(name: Option<&str>, version: Option<Version>) -> Result<Self, InstanceCreationError> {
 		Ok(Self {
+			events: EventsLoop::new(),
 			instance:
 				Instance::new(
 					Some(&ApplicationInfo {
@@ -62,6 +67,24 @@ impl Context {
 				)?,
 			devices: vec![],
 		})
+	}
+
+	pub fn create_window<T: Into<String>>(&mut self, title: T) -> Window {
+		let surface = winit::WindowBuilder::new()
+			.with_title(title)
+			.build_vk_surface(&self.events.events, self.instance.clone())
+			.expect("failed to create window");
+
+		let device = self.get_device_for_surface(&surface);
+
+		let resized = Arc::<AtomicBool>::default();
+		self.events.resized.insert(surface.window().id(), resized.clone());
+
+		Window::new(surface, device, resized)
+	}
+
+	pub fn poll_events<F: FnMut(Event)>(&mut self, callback: F) {
+		self.events.poll_events(callback)
 	}
 
 	fn get_device_for_surface<T>(&mut self, surface: &Surface<T>) -> Arc<DeviceCtx> {
@@ -92,6 +115,33 @@ impl Context {
 		let ret = DeviceCtx::new(device, queue);
 		self.devices.push(ret.clone());
 		ret
+	}
+}
+
+pub struct EventsLoop {
+	events: winit::EventsLoop,
+	resized: HashMap<WindowId, Arc<AtomicBool>>,
+}
+impl EventsLoop {
+	pub fn new() -> Self {
+		Self { events: winit::EventsLoop::new(), resized: HashMap::new() }
+	}
+
+	pub fn poll_events(&mut self, mut callback: impl FnMut(Event)) {
+		let resized = &mut self.resized;
+		self.events.poll_events(|event| {
+			match event {
+				Event::WindowEvent { event: WindowEvent::CloseRequested, window_id } => {
+					resized.remove(&window_id);
+				},
+				Event::WindowEvent { event: WindowEvent::Resized(_), window_id } => {
+					resized[&window_id].store(true, Ordering::Relaxed);
+				},
+				_ => (),
+			}
+
+			callback(event);
+		});
 	}
 }
 

@@ -1,8 +1,8 @@
 pub use winit::{ Event, MouseButton, MouseCursor, WindowEvent, WindowId, dpi::{ LogicalPosition, LogicalSize } };
 
-use { Context, ObjectIdRoot, RenderTarget };
+use { ObjectIdRoot, RenderTarget };
 use device::DeviceCtx;
-use std::{ collections::HashMap, iter::Iterator, sync::{ Arc, atomic::{ AtomicBool, Ordering } }};
+use std::{ iter::Iterator, sync::{ Arc, atomic::{ AtomicBool, Ordering } }};
 use vulkano::{
 	format::Format,
 	image::ImageViewAccess,
@@ -18,35 +18,7 @@ use vulkano::{
 	},
 	sync::{ FlushError, GpuFuture },
 };
-use vulkano_win::VkSurfaceBuild;
 use winit;
-
-pub struct EventsLoop {
-	events: winit::EventsLoop,
-	resized: HashMap<WindowId, Arc<AtomicBool>>,
-}
-impl EventsLoop {
-	pub fn new() -> Self {
-		Self { events: winit::EventsLoop::new(), resized: HashMap::new() }
-	}
-
-	pub fn poll_events(&mut self, mut callback: impl FnMut(Event)) {
-		let resized = &mut self.resized;
-		self.events.poll_events(|event| {
-			match event {
-				Event::WindowEvent { event: WindowEvent::CloseRequested, window_id } => {
-					resized.remove(&window_id);
-				},
-				Event::WindowEvent { event: WindowEvent::Resized(_), window_id } => {
-					resized[&window_id].store(true, Ordering::Relaxed);
-				},
-				_ => (),
-			}
-
-			callback(event);
-		});
-	}
-}
 
 pub struct Window {
 	surface: Arc<Surface<winit::Window>>,
@@ -58,57 +30,6 @@ pub struct Window {
 	id_root: ObjectIdRoot,
 }
 impl Window {
-	pub fn new<T: Into<String>>(ctx: &mut Context, events: &mut EventsLoop, title: T) -> Self {
-		let surface = winit::WindowBuilder::new()
-			.with_title(title)
-			.build_vk_surface(&events.events, ctx.instance.clone())
-			.expect("failed to create window");
-
-		let device = ctx.get_device_for_surface(&surface);
-
-		let (swapchain, images) = {
-			let caps = surface.capabilities(device.device().physical_device()).expect("failed to get surface capabilities");
-			Swapchain::new(
-				device.device().clone(),
-				surface.clone(),
-				caps.min_image_count,
-				Format::B8G8R8A8Srgb,
-				caps.current_extent
-					.unwrap_or(
-						surface.window()
-							.get_inner_size()
-							.map(|size| {
-								let size: (u32, u32) = size.into();
-								[size.0, size.1]
-							})
-							.unwrap()
-					),
-				1,
-				caps.supported_usage_flags,
-				device.queue(),
-				SurfaceTransform::Identity,
-				caps.supported_composite_alpha.iter().next().unwrap(),
-				PresentMode::Fifo,
-				true,
-				None
-			).expect("failed to create swapchain")
-		};
-		let images = images.into_iter().map(|x| x as _).collect();
-
-		let resized = Arc::<AtomicBool>::default();
-		events.resized.insert(surface.window().id(), resized.clone());
-
-		Self {
-			surface: surface,
-			device: device,
-			swapchain: swapchain,
-			images: images,
-			previous_frame_end: None,
-			resized: resized,
-			id_root: ObjectIdRoot::new(),
-		}
-	}
-
 	pub fn join_future(&mut self, future: impl GpuFuture + 'static) {
 		if let Some(previous_frame_end) = self.previous_frame_end.take() {
 			self.previous_frame_end = Some(Box::new(previous_frame_end.join(future)));
@@ -199,6 +120,47 @@ impl Window {
 
 	pub fn device(&self) -> &Arc<DeviceCtx> {
 		&self.device
+	}
+
+	pub(crate) fn new(surface: Arc<Surface<winit::Window>>, device: Arc<DeviceCtx>, resized: Arc<AtomicBool>) -> Self {
+		let (swapchain, images) = {
+			let caps = surface.capabilities(device.device().physical_device()).expect("failed to get surface capabilities");
+			Swapchain::new(
+				device.device().clone(),
+				surface.clone(),
+				caps.min_image_count,
+				Format::B8G8R8A8Srgb,
+				caps.current_extent
+					.unwrap_or(
+						surface.window()
+							.get_inner_size()
+							.map(|size| {
+								let size: (u32, u32) = size.into();
+								[size.0, size.1]
+							})
+							.unwrap()
+					),
+				1,
+				caps.supported_usage_flags,
+				device.queue(),
+				SurfaceTransform::Identity,
+				caps.supported_composite_alpha.iter().next().unwrap(),
+				PresentMode::Fifo,
+				true,
+				None
+			).expect("failed to create swapchain")
+		};
+		let images = images.into_iter().map(|x| x as _).collect();
+
+		Self {
+			surface: surface,
+			device: device,
+			swapchain: swapchain,
+			images: images,
+			previous_frame_end: None,
+			resized: resized,
+			id_root: ObjectIdRoot::new(),
+		}
 	}
 }
 impl RenderTarget for Window {
