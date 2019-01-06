@@ -41,7 +41,7 @@ fn main() {
 		).unwrap();
 	let (sprite, sprite_future) = Sprite::new(&mut window, &sprite_batch_shared, &texture, [10.0, 42.0]).unwrap();
 
-	let text = window.device().get_font("examples/assets/consola.ttf".into(), 24.0).unwrap()
+	let text = window.device().get_font("examples/assets/consola.ttf", 24.0).unwrap()
 		.make_sprite("The quick brown fox jumped over the lazy dog. (╯°□°）╯︵ ┻━┻", &sprite_batch_shared, [10.0, 32.0])
 		.unwrap();
 

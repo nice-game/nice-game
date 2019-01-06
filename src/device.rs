@@ -1,6 +1,6 @@
 use batch::sprite::Font;
 use decorum::R32;
-use std::{ collections::HashMap, io, path::PathBuf, sync::{ Arc, Mutex, Weak } };
+use std::{ collections::HashMap, fs, io, path::{ Path, PathBuf }, sync::{ Arc, Mutex, Weak } };
 use vulkano::device::{ Device, Queue };
 
 pub struct DeviceCtx {
@@ -9,7 +9,8 @@ pub struct DeviceCtx {
 	fonts: Mutex<HashMap<(PathBuf, R32), Weak<Font>>>,
 }
 impl DeviceCtx {
-	pub fn get_font(&self, path: PathBuf, scale: f32) -> Result<Arc<Font>, io::Error> {
+	pub fn get_font<P: AsRef<Path>>(&self, path: P, scale: f32) -> Result<Arc<Font>, io::Error> {
+		let path = fs::canonicalize(path)?;
 		let mut fonts = self.fonts.lock().unwrap();
 		let path_scale = (path, scale.into());
 
