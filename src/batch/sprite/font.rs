@@ -6,10 +6,7 @@ use vulkano::{
 	OomError,
 	buffer::{ BufferUsage, ImmutableBuffer },
 	command_buffer::{ AutoCommandBuffer, AutoCommandBufferBuilder, BuildError, CommandBufferExecFuture, DynamicState },
-	descriptor::{
-		DescriptorSet,
-		descriptor_set::PersistentDescriptorSet
-	},
+	descriptor::{ DescriptorSet, descriptor_set::PersistentDescriptorSet },
 	device::Queue,
 	format::Format,
 	image::{ Dimensions, ImageCreationError, ImmutableImage },
@@ -21,20 +18,12 @@ use vulkano::{
 
 pub struct Font {
 	queue: Arc<Queue>,
+	scale: f32,
 	font: RtFont<'static>,
 	glyphs: Mutex<HashMap<GlyphId, Option<Glyph>>>,
 	futures: Mutex<HashMap<GlyphId, Arc<FenceSignalFuture<GlyphFuture>>>>,
 }
 impl Font {
-	pub(crate) fn from_file<P: AsRef<Path>>(queue: Arc<Queue>, path: P) -> Result<Arc<Self>, io::Error> {
-		let mut bytes = vec![];
-		File::open(path)?.read_to_end(&mut bytes)?;
-
-		let font = RtFont::from_bytes(bytes).unwrap();
-
-		Ok(Arc::new(Self { queue: queue, font: font, glyphs: Mutex::default(), futures: Mutex::default() }))
-	}
-
 	pub fn make_sprite(
 		&self,
 		text: &str,
@@ -50,7 +39,7 @@ impl Font {
 		let glyphs = self.glyphs.lock().unwrap();
 		let futures = self.futures.lock().unwrap();
 
-		for glyph in self.font.layout(text, Scale::uniform(24.0), Point { x: x, y: y }) {
+		for glyph in self.font.layout(text, Scale::uniform(self.scale), Point { x: x, y: y }) {
 			let id = glyph.id();
 
 			let point = glyph.position();
@@ -79,6 +68,21 @@ impl Font {
 		Ok(TextSprite { static_descs: static_descs, positions: positions, futures: glyph_futures })
 	}
 
+	pub(crate) fn from_file<P: AsRef<Path>>(queue: Arc<Queue>, path: P, scale: f32) -> Result<Arc<Self>, io::Error> {
+		let mut bytes = vec![];
+		File::open(path)?.read_to_end(&mut bytes)?;
+
+		let font = RtFont::from_bytes(bytes).unwrap();
+
+		Ok(Arc::new(Self {
+			queue: queue,
+			font: font,
+			glyphs: Mutex::default(),
+			futures: Mutex::default(),
+			scale: scale
+		}))
+	}
+
 	fn load_chars(&self, chars: impl Iterator<Item = char>) -> Result<(), DeviceMemoryAllocError> {
 		let mut glyphs = self.glyphs.lock().unwrap();
 		let mut futures = self.futures.lock().unwrap();
@@ -87,7 +91,7 @@ impl Font {
 			let id = self.font.glyph(ch).id();
 
 			if !glyphs.contains_key(&id) {
-				let glyph = self.font.glyph(id).scaled(Scale::uniform(24.0)).positioned(Point { x: 0.0, y: 0.0 });
+				let glyph = self.font.glyph(id).scaled(Scale::uniform(self.scale)).positioned(Point { x: 0.0, y: 0.0 });
 
 				if let Some(bb) = glyph.pixel_bounding_box() {
 					let bblen = bb.width() as usize * bb.height() as usize;

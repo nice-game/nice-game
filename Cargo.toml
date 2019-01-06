@@ -13,6 +13,7 @@ lto = true
 atom = "0.3"
 byteorder = "1.2"
 cgmath = { version = "0.16", features = ["swizzle"] }
+decorum = "0.1"
 futures-preview = "0.2"
 image = "0.20"
 lazy_static = "1.2"
