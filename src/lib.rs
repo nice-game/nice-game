@@ -1,4 +1,4 @@
-#![feature(proc_macro_gen)]
+#![feature(await_macro, async_await, futures_api)]
 
 extern crate atom;
 extern crate byteorder;

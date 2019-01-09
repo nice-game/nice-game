@@ -3,7 +3,7 @@ use batch::mesh::{ MeshRenderPass, mesh::{ Material, MaterialTextureInfo, Materi
 use byteorder::{LE, ReadBytesExt};
 use cgmath::{ Quaternion, Vector3 };
 use cpu_pool::{ execute_future, GpuFutureFuture };
-use futures::{ future::ok, prelude::* };
+use futures::{ FutureExt, future::ready, prelude::* };
 use std::{ fs::File, io::{ self, prelude::*, SeekFrom }, mem::{ size_of, transmute }, path::{ Path }, sync::Arc };
 use texture::{ ImageFormat, ImmutableTexture, Texture };
 use vulkano::{
@@ -175,7 +175,7 @@ pub fn from_nice_model(
 
 	for (i, data) in mat_temp_datas.into_iter().enumerate() {
 		let texture1_default = render_pass.shaders.texture1_default.clone();
-		let future1: Box<Future<Item = _, Error = _> + Send> =
+		let future1: Box<Future<Output = _> + Send + Unpin> =
 			if data.texture1_name_size != 0 {
 				file.seek(SeekFrom::Start(data.texture1_name_offset as u64))?;
 				let mut buf = vec![0; data.texture1_name_size as usize];
@@ -185,18 +185,19 @@ pub fn from_nice_model(
 				Box::new(
 					ImmutableTexture
 						::from_file_with_format_impl(queue.clone(), path.clone(), ImageFormat::PNG, true)
-						.map_err(|err| error!("{:?}", err))
-						.and_then(|(tex, future)| {
-							GpuFutureFuture::new(future).map(|_| tex.image().clone()).map_err(|err| error!("{:?}", err))
-						})
-						.or_else::<Result<_, Never>, _>(move |err| { error!("{:?}: {:?}", path, err); Ok(texture1_default) })
+						.map(|result| result
+							.map(|(tex, future)| {
+								GpuFutureFuture::new(future).map(|_| tex.image().clone()).unwrap()
+							})
+							.unwrap_or_else(move |_| texture1_default)
+						)
 				)
 			} else {
-				Box::new(ok(texture1_default))
+				Box::new(ready(texture1_default))
 			};
 
 		let texture2_default = render_pass.shaders.texture2_default.clone();
-		let future2: Box<Future<Item = _, Error = _> + Send> =
+		let future2: Box<Future<Output = _> + Send + Unpin> =
 			if data.texture2_name_size != 0 {
 				file.seek(SeekFrom::Start(data.texture2_name_offset as u64))?;
 				let mut buf = vec![0; data.texture2_name_size as usize];
@@ -206,14 +207,15 @@ pub fn from_nice_model(
 				Box::new(
 					ImmutableTexture
 						::from_file_with_format_impl(queue.clone(), path.clone(), ImageFormat::PNG, false)
-						.map_err(|err| error!("{:?}", err))
-						.and_then(|(tex, future)| {
-							GpuFutureFuture::new(future).map(|_| tex.image().clone()).map_err(|err| error!("{:?}", err))
-						})
-						.or_else::<Result<_, Never>, _>(move |err| { error!("{:?}: {:?}", path, err); Ok(texture2_default) })
+						.map(|result| result
+							.map(|(tex, future)| {
+								GpuFutureFuture::new(future).map(|_| tex.image().clone()).unwrap()
+							})
+							.unwrap_or_else(move |_| texture2_default)
+						)
 				)
 			} else {
-				Box::new(ok(texture2_default))
+				Box::new(ready(texture2_default))
 			};
 
 
@@ -223,8 +225,8 @@ pub fn from_nice_model(
 		let pipeline_gbuffers = render_pass.pipeline_gbuffers.clone();
 		let sampler = render_pass.shaders.sampler.clone();
 
-		let future = future1.join(future2)
-			.and_then(move |(tex1, tex2)| {
+		let future = FutureExt::join(future1, future2)
+			.map(move |(tex1, tex2)| {
 				desc
 					.swap(Box::new(Arc::new(
 						PersistentDescriptorSet::start(pipeline_gbuffers.clone(), 2)
@@ -242,7 +244,6 @@ pub fn from_nice_model(
 							.build()
 							.unwrap()
 					)));
-				Ok(())
 			});
 
 		execute_future(future);

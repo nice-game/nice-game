@@ -40,11 +40,11 @@ impl Mesh {
 		path: impl AsRef<Path> + Clone + Send + 'static,
 		position: Vector3<f32>,
 		rotation: Quaternion<f32>,
-	) -> impl Future<Item = (Self, impl GpuFuture + Send + Sync + 'static), Error = MeshFromFileError>
+	) -> impl Future<Output = Result<(Self, impl GpuFuture + Send + Sync + 'static), MeshFromFileError>>
 	{
 		let device = window.device().device().clone();
 		let queue = window.device().queue().clone();
-		spawn_fs(move |_| codec::from_nice_model(device, queue, render_pass, path, position, rotation))
+		spawn_fs(move || codec::from_nice_model(device, queue, render_pass, path, position, rotation))
 	}
 
 	pub fn set_position(&mut self, position: Vector3<f32>) -> Result<(), DeviceMemoryAllocError> {

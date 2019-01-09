@@ -5,7 +5,7 @@ authors = ["IcyDefiance <icydefiance@gmail.com>"]
 
 [dependencies]
 cgmath = "0.16"
-futures-preview = "0.2"
+futures-preview = "0.3.0-alpha.11"
 multiinput = "0.0"
 nice-game = { path = "../../" }
 simplelog = "0.5"

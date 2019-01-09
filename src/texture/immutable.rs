@@ -36,7 +36,7 @@ impl ImmutableTexture {
 		path: P,
 		format: ImageFormat,
 		srgb: bool,
-	) -> impl Future<Item = (Self, impl GpuFuture), Error = TextureError>
+	) -> impl Future<Output = Result<(Self, impl GpuFuture), TextureError>>
 	where P: AsRef<Path> + Send + 'static {
 		Self::from_file_with_format_impl(window.device().queue().clone(), path, format, srgb)
 	}
@@ -46,14 +46,15 @@ impl ImmutableTexture {
 		path: P,
 		format: ImageFormat,
 		srgb: bool,
-	) -> impl Future<Item = (Self, impl GpuFuture), Error = TextureError>
+	) -> impl Future<Output = Result<(Self, impl GpuFuture), TextureError>>
 	where P: AsRef<Path> + Send + 'static {
-		spawn_fs(|_| {
+		spawn_fs(|| {
 			let mut bytes = vec![];
 			File::open(path)?.read_to_end(&mut bytes)?;
 			Ok(bytes)
 		})
-			.and_then(move |bytes| spawn_cpu(move |_| {
+			.then(move |bytes: Result<Vec<u8>, io::Error>| spawn_cpu(move || {
+				let bytes = bytes?;
 				let img = image::load_from_memory_with_format(&bytes, format)?.to_rgba();
 				let (width, height) = img.dimensions();
 				let img = img.into_raw();

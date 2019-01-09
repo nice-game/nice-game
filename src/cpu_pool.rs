@@ -1,6 +1,12 @@
-use futures::{ channel::oneshot, executor::ThreadPool, future::{ lazy, ok }, prelude::* };
+use futures::{
+	channel::oneshot,
+	executor::ThreadPool,
+	future::lazy,
+	prelude::*,
+	task::{ LocalWaker, Poll, SpawnExt }
+};
 use num_cpus;
-use std::{ cmp::min, sync::Mutex };
+use std::{ cmp::min, pin::Pin, sync::Mutex };
 use vulkano::sync::{ FenceSignalFuture, FlushError, GpuFuture };
 
 lazy_static! {
@@ -9,11 +15,11 @@ lazy_static! {
 	static ref FS_POOL: Mutex<CpuPool> = Mutex::new(CpuPool::new(1));
 }
 
-pub fn execute_future(future: impl Future<Item = (), Error = Never> + Send + 'static) {
+pub fn execute_future(future: impl Future<Output = ()> + Unpin + Send + 'static) {
 	EXECUTOR_POOL.lock().unwrap().spawn(Box::new(future)).unwrap();
 }
 
-pub fn spawn_cpu<T, E>(func: impl FnOnce(&mut task::Context) -> Result<T, E> + Send + 'static) -> CpuFuture<T, E>
+pub fn spawn_cpu<T, E>(func: impl FnOnce() -> Result<T, E> + Send + 'static) -> CpuFuture<T, E>
 where
 	T: Send + 'static,
 	E: Send + 'static
@@ -21,7 +27,7 @@ where
 	CPU_POOL.lock().unwrap().dispatch(func)
 }
 
-pub fn spawn_fs<T, E>(func: impl FnOnce(&mut task::Context) -> Result<T, E> + Send + 'static) -> CpuFuture<T, E>
+pub fn spawn_fs<T, E>(func: impl FnOnce() -> Result<T, E> + Send + 'static) -> CpuFuture<T, E>
 where
 	T: Send + 'static,
 	E: Send + 'static
@@ -37,19 +43,13 @@ impl CpuPool {
 		Self { pool: ThreadPool::builder().pool_size(thread_count).create().unwrap() }
 	}
 
-	pub fn dispatch<T, E>(&mut self, func: impl FnOnce(&mut task::Context) -> Result<T, E> + Send + 'static) -> CpuFuture<T, E>
+	pub fn dispatch<T, E>(&mut self, func: impl FnOnce() -> Result<T, E> + Send + 'static) -> CpuFuture<T, E>
 	where
 		T: Send + 'static,
 		E: Send + 'static
 	{
 		let (send, recv) = oneshot::channel();
-
-		#[allow(unused_must_use)]
-		self.pool.spawn(Box::new(lazy(move |cx| {
-			send.send(func(cx));
-			ok(())
-		}))).unwrap();
-
+		self.pool.spawn(lazy(|_| { send.send(func()).ok(); })).unwrap();
 		CpuFuture { recv: recv }
 	}
 }
@@ -58,18 +58,10 @@ pub struct CpuFuture<T, E> {
 	recv: oneshot::Receiver<Result<T, E>>,
 }
 impl<T, E> Future for CpuFuture<T, E> {
-	type Item = T;
-	type Error = E;
+	type Output = Result<T, E>;
 
-	fn poll(&mut self, cx: &mut task::Context) -> Poll<Self::Item, Self::Error> {
-		match self.recv.poll(cx) {
-			Ok(Async::Ready(ret)) => match ret {
-				Ok(ret) => Ok(Async::Ready(ret)),
-				Err(err) => Err(err)
-			},
-			Ok(Async::Pending) => Ok(Async::Pending),
-			Err(_) => unreachable!(),
-		}
+	fn poll(mut self: Pin<&mut Self>, lw: &LocalWaker) -> Poll<Self::Output> {
+		oneshot::Receiver::poll(Pin::new(&mut self.recv), lw).map(|val| val.unwrap())
 	}
 }
 
@@ -82,14 +74,13 @@ impl<T: GpuFuture> GpuFutureFuture<T> {
 	}
 }
 impl<T: GpuFuture> Future for GpuFutureFuture<T> {
-	type Item = ();
-	type Error = FlushError;
+	type Output = Result<(), FlushError>;
 
-	fn poll(&mut self, _: &mut task::Context) -> Poll<Self::Item, Self::Error> {
+	fn poll(self: Pin<&mut Self>, _lw: &LocalWaker) -> Poll<Self::Output> {
 		match self.future.wait(Some(Default::default())) {
-			Ok(()) => Ok(Async::Ready(())),
-			Err(FlushError::Timeout) => Ok(Async::Pending),
-			Err(err) => Err(err),
+			Ok(()) => Poll::Ready(Ok(())),
+			Err(FlushError::Timeout) => Poll::Pending,
+			Err(err) => Poll::Ready(Err(err)),
 		}
 	}
 }

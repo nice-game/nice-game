@@ -4,5 +4,5 @@ version = "0.1.0"
 authors = ["IcyDefiance <icydefiance@gmail.com>"]
 
 [dependencies]
-futures-preview = "0.2"
+futures-preview = "0.3.0-alpha.11"
 nice-game = { path = "../../" }
