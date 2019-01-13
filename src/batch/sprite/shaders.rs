@@ -4,7 +4,7 @@ use vulkano::{
 	impl_vertex,
 	OomError,
 	buffer::{ BufferUsage, ImmutableBuffer },
-	device::Device,
+	device::{ Device, Queue },
 	memory::DeviceMemoryAllocError,
 	sampler::{ BorderColor, Filter, MipmapMode, Sampler, SamplerAddressMode, SamplerCreationError },
 	sync::GpuFuture,
@@ -12,6 +12,7 @@ use vulkano::{
 
 pub struct SpriteBatchShaders {
 	device: Arc<Device>,
+	queue: Arc<Queue>,
 	vertices: Arc<ImmutableBuffer<[SpriteVertex; 6]>>,
 	sprite_vertex_shader: sprite_vs::Shader,
 	sprite_fragment_shader: sprite_fs::Shader,
@@ -39,6 +40,7 @@ impl SpriteBatchShaders {
 		Ok((
 			Arc::new(Self {
 				device: window.device().device().clone(),
+				queue: window.device().queue().clone(),
 				vertices: vertices,
 				sprite_vertex_shader: sprite_vs::Shader::load(window.device().device().clone())?,
 				sprite_fragment_shader: sprite_fs::Shader::load(window.device().device().clone())?,
@@ -71,6 +73,10 @@ impl SpriteBatchShaders {
 
 	pub(crate) fn device(&self) -> &Arc<Device> {
 		&self.device
+	}
+
+	pub(crate) fn queue(&self) -> &Arc<Queue> {
+		&self.queue
 	}
 
 	pub(crate) fn vertices(&self) -> &Arc<ImmutableBuffer<[SpriteVertex; 6]>> {

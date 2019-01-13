@@ -1,11 +1,15 @@
+use crate::texture::Texture;
 use super::shaders::{ SpriteBatchShaders, SpriteVertex };
+use super::sprite::Sprite;
 use std::sync::{ Arc, Mutex };
 use vulkano::{
 	single_pass_renderpass,
 	descriptor::descriptor_set::FixedSizeDescriptorSetsPool,
 	format::Format,
 	framebuffer::{ RenderPassAbstract, Subpass },
+	memory::DeviceMemoryAllocError,
 	pipeline::{ GraphicsPipeline, GraphicsPipelineAbstract },
+	sync::GpuFuture,
 };
 
 pub struct SpriteBatchShared {
@@ -61,6 +65,20 @@ impl SpriteBatchShared {
 			pipeline_text: pipeline_text,
 			sprite_desc_pool: Mutex::new(FixedSizeDescriptorSetsPool::new(pipeline_sprite, 1)),
 		})
+	}
+
+	pub fn create_sprite(
+		&self,
+		texture: &Texture,
+		position: [f32; 2],
+	) -> Result<(Sprite, impl GpuFuture), DeviceMemoryAllocError> {
+		Sprite::new(
+			self.shaders.queue().clone(),
+			self.pipeline_sprite.clone(),
+			self.shaders.sprite_sampler().clone(),
+			texture,
+			position,
+		)
 	}
 
 	pub(crate) fn shaders(&self) -> &Arc<SpriteBatchShaders> {

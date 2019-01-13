@@ -7,7 +7,7 @@ use nice_game::{
 	GpuFuture,
 	RenderTarget,
 	Version,
-	batch::sprite::{ Sprite, SpriteBatch, SpriteBatchShaders, SpriteBatchShared },
+	batch::sprite::{ SpriteBatch, SpriteBatchShaders, SpriteBatchShared },
 	texture::{ ImageFormat, ImmutableTexture },
 	window::{ Event, WindowEvent },
 };
@@ -39,7 +39,7 @@ fn main() {
 				true
 			)
 		).unwrap();
-	let (sprite, sprite_future) = Sprite::new(&mut window, &sprite_batch_shared, &texture, [10.0, 42.0]).unwrap();
+	let (sprite, sprite_future) = sprite_batch_shared.create_sprite(&texture, [10.0, 42.0]).unwrap();
 
 	let text = window.device().get_font("examples/assets/consola.ttf", 24.0).unwrap()
 		.make_sprite("The quick brown fox jumped over the lazy dog. (╯°□°）╯︵ ┻━┻", &sprite_batch_shared, [10.0, 32.0])
