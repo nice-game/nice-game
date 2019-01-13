@@ -15,8 +15,8 @@ lazy_static! {
 	static ref FS_POOL: Mutex<CpuPool> = Mutex::new(CpuPool::new(1));
 }
 
-pub fn execute_future(future: impl Future<Output = ()> + Unpin + Send + 'static) {
-	EXECUTOR_POOL.lock().unwrap().spawn(Box::new(future)).unwrap();
+pub fn execute_future(future: impl Future<Output = ()> + Send + 'static) {
+	EXECUTOR_POOL.lock().unwrap().spawn(future).unwrap();
 }
 
 pub fn spawn_cpu<T, E>(func: impl FnOnce() -> Result<T, E> + Send + 'static) -> CpuFuture<T, E>

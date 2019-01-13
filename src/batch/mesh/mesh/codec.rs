@@ -225,28 +225,27 @@ pub fn from_nice_model(
 		let pipeline_gbuffers = render_pass.pipeline_gbuffers.clone();
 		let sampler = render_pass.shaders.sampler.clone();
 
-		let future = FutureExt::join(future1, future2)
-			.map(move |(tex1, tex2)| {
-				desc
-					.swap(Box::new(Arc::new(
-						PersistentDescriptorSet::start(pipeline_gbuffers.clone(), 2)
-							.add_buffer(
-								material_buf.clone()
-									.into_buffer_slice()
-									.slice(material_offset..material_offset + size_of::<MaterialUniform>())
-									.unwrap()
-							)
-							.unwrap()
-							.add_sampled_image(tex1, sampler.clone())
-							.unwrap()
-							.add_sampled_image(tex2, sampler.clone())
-							.unwrap()
-							.build()
-							.unwrap()
-					)));
-			});
+		execute_future(async move {
+			let tex1 = await!(future1);
+			let tex2 = await!(future2);
 
-		execute_future(future);
+			desc.swap(Box::new(Arc::new(
+				PersistentDescriptorSet::start(pipeline_gbuffers.clone(), 2)
+					.add_buffer(
+						material_buf.clone()
+							.into_buffer_slice()
+							.slice(material_offset..material_offset + size_of::<MaterialUniform>())
+							.unwrap()
+					)
+					.unwrap()
+					.add_sampled_image(tex1, sampler.clone())
+					.unwrap()
+					.add_sampled_image(tex2, sampler.clone())
+					.unwrap()
+					.build()
+					.unwrap()
+			)));
+		});
 	}
 
 	let position_pool = CpuBufferPool::uniform_buffer(device.clone());
