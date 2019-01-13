@@ -1,11 +1,12 @@
+use crate::batch::mesh::{ MeshRenderPass, mesh::{ Material, MaterialTextureInfo, MaterialUniform, Mesh, MeshFromFileError } };
+use crate::cpu_pool::{ execute_future, GpuFutureFuture };
+use crate::texture::{ ImageFormat, ImmutableTexture, Texture };
 use atom::Atom;
-use batch::mesh::{ MeshRenderPass, mesh::{ Material, MaterialTextureInfo, MaterialUniform, Mesh, MeshFromFileError } };
 use byteorder::{LE, ReadBytesExt};
 use cgmath::{ Quaternion, Vector3 };
-use cpu_pool::{ execute_future, GpuFutureFuture };
 use futures::{ FutureExt, future::ready, prelude::* };
+use log::{ debug, log };
 use std::{ fs::File, io::{ self, prelude::*, SeekFrom }, mem::{ size_of, transmute }, path::{ Path }, sync::Arc };
-use texture::{ ImageFormat, ImmutableTexture, Texture };
 use vulkano::{
 	buffer::{ BufferAccess, BufferUsage, CpuAccessibleBuffer, CpuBufferPool, ImmutableBuffer },
 	descriptor::descriptor_set::PersistentDescriptorSet,
@@ -217,7 +218,6 @@ pub fn from_nice_model(
 			} else {
 				Box::new(ready(texture2_default))
 			};
-
 
 		let desc = materials[i].desc.clone();
 		let material_buf = material_buf.clone();

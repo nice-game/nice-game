@@ -1,8 +1,9 @@
-use cpu_pool::{ spawn_cpu, spawn_fs };
+use crate::cpu_pool::{ spawn_cpu, spawn_fs };
+use crate::texture::Texture;
+use crate::window::Window;
 use futures::prelude::*;
 use image::{ self, ImageError, ImageFormat };
 use std::{ fs::File, io::{ self, prelude::* }, path::Path, sync::Arc };
-use texture::Texture;
 use vulkano::{
 	OomError,
 	device::Queue,
@@ -11,7 +12,6 @@ use vulkano::{
 	memory::DeviceMemoryAllocError,
 	sync::{ FlushError, GpuFuture },
 };
-use window::Window;
 
 #[derive(Clone)]
 pub struct ImmutableTexture {

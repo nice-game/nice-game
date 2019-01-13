@@ -1,10 +1,10 @@
+use crate::window::Window;
 use cgmath::{ vec4, Quaternion, Vector3, Vector4 };
 use std::{ f32::consts::PI, sync::Arc };
 use vulkano::{
 	buffer::{ CpuBufferPool, cpu_pool::CpuBufferPoolSubbuffer },
 	memory::{ DeviceMemoryAllocError, pool::StdMemoryPool },
 };
-use window::Window;
 
 pub struct Camera {
 	position_pool: CpuBufferPool<Vector3<f32>>,

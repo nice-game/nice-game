@@ -5,11 +5,12 @@ mod render_pass;
 pub use self::mesh::Mesh;
 pub use self::shaders::{ MeshShaders, MeshShadersError };
 pub use self::render_pass::MeshRenderPass;
-use { ObjectId, RenderTarget, window::Window };
-use camera::Camera;
+use crate::{ ObjectId, RenderTarget, window::Window };
+use crate::camera::Camera;
 use cgmath::{ vec4, Vector4 };
 use std::sync::Arc;
 use vulkano::{
+	impl_vertex,
 	buffer::{ BufferUsage, ImmutableBuffer },
 	command_buffer::{ AutoCommandBuffer, AutoCommandBufferBuilder, BuildError, DynamicState },
 	descriptor::{ DescriptorSet, descriptor_set::{ FixedSizeDescriptorSetsPool, PersistentDescriptorSet } },

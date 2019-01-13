@@ -1,4 +1,5 @@
-use batch::mesh::{ TargetVertex };
+use crate::batch::mesh::{ TargetVertex };
+use crate::window::Window;
 use std::sync::Arc;
 use vulkano::{
 	OomError,
@@ -10,7 +11,6 @@ use vulkano::{
 	sampler::{ Filter, MipmapMode, Sampler, SamplerAddressMode, SamplerCreationError },
 	sync::GpuFuture,
 };
-use window::Window;
 
 pub struct MeshShaders {
 	pub(super) queue: Arc<Queue>,

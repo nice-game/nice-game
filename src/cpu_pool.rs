@@ -5,7 +5,7 @@ use futures::{
 	prelude::*,
 	task::{ LocalWaker, Poll, SpawnExt }
 };
-use num_cpus;
+use lazy_static::lazy_static;
 use std::{ cmp::min, pin::Pin, sync::Mutex };
 use vulkano::sync::{ FenceSignalFuture, FlushError, GpuFuture };
 

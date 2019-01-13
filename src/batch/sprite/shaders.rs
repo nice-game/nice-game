@@ -1,5 +1,7 @@
+use crate::window::Window;
 use std::sync::Arc;
 use vulkano::{
+	impl_vertex,
 	OomError,
 	buffer::{ BufferUsage, ImmutableBuffer },
 	device::Device,
@@ -7,7 +9,6 @@ use vulkano::{
 	sampler::{ BorderColor, Filter, MipmapMode, Sampler, SamplerAddressMode, SamplerCreationError },
 	sync::GpuFuture,
 };
-use window::Window;
 
 pub struct SpriteBatchShaders {
 	device: Arc<Device>,

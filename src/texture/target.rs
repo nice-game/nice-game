@@ -1,12 +1,12 @@
-use { ObjectIdRoot, RenderTarget };
+use crate::{ ObjectIdRoot, RenderTarget };
+use crate::texture::Texture;
+use crate::window::Window;
 use std::sync::Arc;
-use texture::Texture;
 use vulkano::{
 	format::Format,
 	image::{ AttachmentImage, ImageCreationError, ImageViewAccess },
 	memory::DeviceMemoryAllocError,
 };
-use window::Window;
 
 pub struct TargetTexture {
 	image: [Arc<ImageViewAccess + Send + Sync + 'static>; 1],

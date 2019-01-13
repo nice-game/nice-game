@@ -1,6 +1,7 @@
 use super::shaders::{ SpriteBatchShaders, SpriteVertex };
 use std::sync::{ Arc, Mutex };
 use vulkano::{
+	single_pass_renderpass,
 	descriptor::descriptor_set::FixedSizeDescriptorSetsPool,
 	format::Format,
 	framebuffer::{ RenderPassAbstract, Subpass },

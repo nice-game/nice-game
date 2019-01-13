@@ -1,7 +1,7 @@
-use batch::sprite::{ Drawable2D, SpriteBatchShared };
+use crate::batch::sprite::{ Drawable2D, SpriteBatchShared };
+use crate::texture::{ Texture, ImmutableTexture };
 use rusttype::{ Font as RtFont, GlyphId, Point, Scale };
 use std::{ collections::HashMap, fs::File, io::{ self, prelude::* }, path::Path, sync::{ Arc, Mutex } };
-use texture::{ Texture, ImmutableTexture };
 use vulkano::{
 	OomError,
 	buffer::{ BufferUsage, ImmutableBuffer },

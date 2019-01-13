@@ -1,9 +1,10 @@
 mod codec;
 
+use crate::batch::mesh::MeshRenderPass;
+use crate::cpu_pool::spawn_fs;
+use crate::window::Window;
 use atom::Atom;
-use batch::mesh::MeshRenderPass;
 use cgmath::{ Quaternion, Vector3 };
-use cpu_pool::spawn_fs;
 use futures::prelude::*;
 use std::{ io, mem::size_of, path::Path, sync::Arc, vec::IntoIter as VecIntoIter, };
 use vulkano::{
@@ -21,7 +22,6 @@ use vulkano::{
 	},
 	sync::GpuFuture,
 };
-use window::Window;
 
 pub struct Mesh {
 	position_pool: CpuBufferPool<Vector3<f32>>,

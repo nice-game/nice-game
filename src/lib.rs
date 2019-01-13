@@ -1,23 +1,5 @@
 #![feature(await_macro, async_await, futures_api)]
 
-extern crate atom;
-extern crate byteorder;
-extern crate cgmath;
-extern crate decorum;
-extern crate futures;
-extern crate image;
-#[macro_use]
-extern crate lazy_static;
-#[macro_use]
-extern crate log;
-extern crate num_cpus;
-extern crate rusttype;
-#[macro_use]
-extern crate vulkano;
-extern crate vulkano_shaders;
-extern crate vulkano_win;
-extern crate winit;
-
 pub mod camera;
 pub mod cpu_pool;
 pub mod batch;
@@ -27,7 +9,9 @@ pub mod window;
 
 pub use vulkano::{ command_buffer::CommandBuffer, instance::Version, sync::GpuFuture };
 
-use device::DeviceCtx;
+use self::device::DeviceCtx;
+use self::window::Window;
+use log::{ info, log };
 use std::{ collections::HashMap, sync::{ Arc, Weak, atomic::{ AtomicBool, Ordering } } };
 use vulkano::{
 	device::{ Device, DeviceExtensions, Features },
@@ -38,7 +22,6 @@ use vulkano::{
 	swapchain::Surface,
 };
 use vulkano_win::VkSurfaceBuild;
-use window::Window;
 use winit::{ Event, WindowEvent, WindowId };
 
 /// Root struct for this library. Any windows that are created using the same context will share some resources.

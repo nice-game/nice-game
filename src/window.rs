@@ -1,7 +1,7 @@
 pub use winit::{ Event, MouseButton, MouseCursor, WindowEvent, WindowId, dpi::{ LogicalPosition, LogicalSize } };
 
-use { ObjectIdRoot, RenderTarget };
-use device::DeviceCtx;
+use crate::{ ObjectIdRoot, RenderTarget };
+use crate::device::DeviceCtx;
 use std::{ iter::Iterator, sync::{ Arc, atomic::{ AtomicBool, Ordering } }};
 use vulkano::{
 	format::Format,

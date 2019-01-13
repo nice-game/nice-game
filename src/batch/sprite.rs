@@ -5,8 +5,8 @@ mod shared;
 pub use self::font::Font;
 pub use self::shaders::SpriteBatchShaders;
 pub use self::shared::SpriteBatchShared;
-use { ImageFramebuffer, ObjectId, RenderTarget, window::Window };
-use texture::Texture;
+use crate::{ ImageFramebuffer, ObjectId, RenderTarget, window::Window };
+use crate::texture::Texture;
 use std::sync::Arc;
 use vulkano::{
 	OomError,
