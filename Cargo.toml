@@ -1,11 +1,11 @@
 [package]
-edition = "2018"
 name = "nice-game"
 version = "0.1.0"
 authors = [
 	"IcyDefiance <icydefiance@gmail.com>",
 	"Mick Lionheart <micklionheart@gmail.com>"
 ]
+edition = "2018"
 
 [profile.release]
 lto = true
@@ -30,5 +30,6 @@ winit = "0.18"
 members = [
 	"examples/mesh",
 	"examples/sprite",
-	"examples/target_texture"
+	"examples/target_texture",
+	"capi"
 ]
