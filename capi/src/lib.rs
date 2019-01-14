@@ -128,6 +128,6 @@ pub struct GGD_PhysicsEngine {
 	ShapeInstance_GetVelocity: extern fn (*mut GGD_ShapeInstance, poseDt: *mut GGTransform),
 	ShapeInstance_SetTransform: extern fn (*mut GGD_ShapeInstance, pose: *mut GGTransform),
 	ShapeInstance_GetTransform: extern fn (*mut GGD_ShapeInstance, pose: *mut GGTransform),
-	ShapeInstance_SetVelocityPoi32er: extern fn (*mut GGD_ShapeInstance, poseDtPtr: *mut GGTransform),
-	ShapeInstance_SetTransformPoi32er: extern fn (*mut GGD_ShapeInstance, posePtr: *mut GGTransform),
+	ShapeInstance_SetVelocityPointer: extern fn (*mut GGD_ShapeInstance, poseDtPtr: *mut GGTransform),
+	ShapeInstance_SetTransformPointer: extern fn (*mut GGD_ShapeInstance, posePtr: *mut GGTransform),
 }
